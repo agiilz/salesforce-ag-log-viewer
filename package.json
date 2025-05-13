@@ -1,0 +1,180 @@
+{
+  "name": "salesforce-ag-log-viewer",
+  "displayName": "Salesforce Log Viewer",
+  "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
+  "version": "1.0.0",
+  "publisher": "adriagil",
+  "author": {
+    "name": "Adria Gil"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agiilz/salesforce-ag-log-viewer"
+  },
+  "license": "MIT",
+  "keywords": [
+    "salesforce",
+    "apex",
+    "logs",
+    "debugging",
+    "development"
+  ],
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:salesforceLogsView"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Salesforce AG Log Viewer",
+      "properties": {
+        "salesforceAgLogViewer.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh logs at the configured interval"
+        },
+        "salesforceAgLogViewer.refreshInterval": {
+          "type": "number",
+          "minimum": 1000,
+          "default": 5000,
+          "description": "Interval in milliseconds between automatic log refreshes (minimum 1000ms)"
+        },
+        "salesforceAgLogViewer.currentUserOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show logs only for the current user"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "salesforce-ag-log-viewer",
+          "title": "Salesforce Logs",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "salesforce-ag-log-viewer": [
+        {
+          "type": "webview",
+          "id": "salesforceLogsView",
+          "name": "Salesforce Logs",
+          "contextualTitle": "Salesforce Logs"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "salesforce-ag-log-viewer.refreshLogs",
+        "title": "Refresh Logs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.openLog",
+        "title": "Open Log",
+        "icon": "$(file)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
+        "title": "Toggle Current User Only",
+        "icon": "$(person)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.deleteAllLogs",
+        "title": "Delete All Logs",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.showOptions",
+        "title": "Show Options",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.showSearchBox",
+        "title": "Search Logs",
+        "icon": "$(search)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.clearSearch",
+        "title": "Clear Search",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
+        "title": "Toggle Auto Refresh",
+        "icon": "$(sync)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "salesforce-ag-log-viewer.showSearchBox",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.refreshLogs",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@5"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.showOptions",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@6"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/glob": "^7.1.3",
+    "@types/jsforce": "^1.11.5",
+    "@types/luxon": "^3.6.2",
+    "@types/mocha": "^8.2.2",
+    "@types/node": "14.x",
+    "@types/vscode": "^1.60.0",
+    "@typescript-eslint/eslint-plugin": "^4.26.0",
+    "@typescript-eslint/parser": "^4.26.0",
+    "eslint": "^7.27.0",
+    "glob": "^7.1.7",
+    "mocha": "^8.4.0",
+    "typescript": "^4.3.2",
+    "vscode-test": "^1.5.2"
+  },
+  "dependencies": {
+    "@salesforce/core": "^3.36.0",
+    "fs-extra": "^11.2.0",
+    "jsforce": "^1.11.0",
+    "luxon": "^3.3.0"
+  }
+}
