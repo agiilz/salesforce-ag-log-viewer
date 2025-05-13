@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createConnection } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch } from './commands';
+import { ensureTraceFlag } from './traceFlag';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -155,17 +156,17 @@ class LogViewProvider implements vscode.WebviewViewProvider {
     ) {
         this._view = webviewView;
 
-        // Handle visibility changes
-        webviewView.onDidChangeVisibility(() => {
-            this._logDataProvider.setVisibility(webviewView.visible);
-            // If becoming visible, refresh immediately to show current data
-            if (webviewView.visible) {
-                this.refresh();
-            }
-        });
-
         // Set initial visibility state
         this._logDataProvider.setVisibility(webviewView.visible);
+
+        // Handle visibility changes
+        webviewView.onDidChangeVisibility(async () => {
+            this._logDataProvider.setVisibility(webviewView.visible);
+            // If becoming visible, just refresh the logs
+            if (webviewView.visible) {
+                await this.refresh();
+            }
+        });
 
         webviewView.webview.options = {
             enableScripts: true,
@@ -224,7 +225,7 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         const connection = await createConnection();
         
-        logDataProvider = new LogDataProvider(
+        logDataProvider = await LogDataProvider.create(
             extensionContext,
             connection,
             {

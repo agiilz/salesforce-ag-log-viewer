@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { Connection } from 'jsforce';
 import { DeveloperLog, DeveloperLogRecord } from './developerLog';
 import { LogViewer } from './logViewer';
+import { ensureTraceFlag } from './traceFlag';
 
 export interface LogDataChangeEvent {
     data: any[];
@@ -72,11 +73,17 @@ export class LogDataProvider implements vscode.Disposable {
 
     private async initialize() {
         try {
-            if (this.config.currentUserOnly) {
+            if (!this.currentUserId) {
                 this.currentUserId = await this.getCurrentUserId();
             }
-            await this.refreshLogs(true, false);
-            // Auto-refresh is now handled in the constructor
+            
+            // Only create trace flag if we're in currentUserOnly mode
+            if (this.config.currentUserOnly && this.currentUserId) {
+                await ensureTraceFlag(this.connection, this.currentUserId);
+                await this.refreshLogs(true, false);
+            } else {
+                await this.refreshLogs(true, false);
+            }
         } catch (error) {
             console.error('LogDataProvider initialization error:', error);
             throw error;
@@ -283,15 +290,21 @@ export class LogDataProvider implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
 
-        if (this.config.currentUserOnly && !this.currentUserId) {
+        // Get current user ID and ensure trace flag
+        if (this.config.currentUserOnly) {
             try {
                 this.currentUserId = await this.getCurrentUserId();
+                
+                if (this.currentUserId) {
+                    await ensureTraceFlag(this.connection, this.currentUserId);
+                }
             } catch (error: any) {
                 vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
                 this.config.currentUserOnly = false;
                 await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
             }
         }
+        
         await this.refreshLogs(true, false);
         this._notifyDataChange(false);
     }
@@ -300,23 +313,25 @@ export class LogDataProvider implements vscode.Disposable {
         return this.config.currentUserOnly;
     }
 
-    private async getCurrentUserId(): Promise<string> {
+    public async getCurrentUserId(): Promise<string> {
         const result = await this.connection.identity();
         return result.user_id;
     }
 
+
     public async updateConnection(newConnection: Connection) {
         this.connection = newConnection;
         // When connection changes, we need to refresh the current user ID if currentUserOnly is enabled
-        if (this.config.currentUserOnly) {
-            try {
-                this.currentUserId = await this.getCurrentUserId();
-            } catch (error: any) {
-                vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
-                this.config.currentUserOnly = false;
-                const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-                await config.update('currentUserOnly', false, vscode.ConfigurationTarget.Global);
+        try {
+            this.currentUserId = await this.getCurrentUserId();
+            if (this.currentUserId) {
+                await ensureTraceFlag(this.connection, this.currentUserId);
             }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
+            this.config.currentUserOnly = false;
+            const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+            await config.update('currentUserOnly', false, vscode.ConfigurationTarget.Global);
         }
         // Refresh logs with the new connection
         await this.refreshLogs(true, false);
