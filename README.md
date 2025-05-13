@@ -1,6 +1,6 @@
 # Salesforce AG Log Viewer for VS Code
 
-A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability.
+A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability. Inspired by the log feature in [@Vlocode](https://github.com/Codeneos/vlocode)
 
 ## Features
 
@@ -57,7 +57,7 @@ None at this time.
 Initial release with core functionality:
 * Auto-refreshing log viewer
 * Log filtering and management
-* Column customization
+* Column customization and sorting
 * Performance optimizations
 
 ## License
