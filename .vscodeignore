@@ -1,0 +1,24 @@
+# Exclude dependencies and dev files
+node_modules
+
+# Exclude source TypeScript files
+src
+!src/templates/logViewer.html
+!src/templates/logViewer.css
+!src/templates/logViewer.js
+
+# Exclude VS Code and git config
+.vscode
+.git
+.gitignore
+
+# Exclude build/test/config files
+out/test
+tsconfig.json
+README.md
+*.map
+
+# Exclude OS-specific files
+*.log
+.DS_Store
+Thumbs.db

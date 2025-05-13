@@ -3,9 +3,9 @@
   "displayName": "Salesforce Log Viewer",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
   "version": "1.0.0",
-  "publisher": "adriagil",
+  "publisher": "aGxLabs",
   "author": {
-    "name": "Adria Gil"
+    "name": "aGx Labs"
   },
   "repository": {
     "type": "git",
