@@ -1,0 +1,196 @@
+body { 
+    margin: 0; 
+    padding: 0; 
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    height: 100vh;
+    overflow: hidden;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.grid {
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--vscode-editor-background);
+}
+
+.grid-header {
+    font-weight: 600;
+    background: var(--vscode-editorGroupHeader-tabsBackground);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 1px 0;
+}
+
+.grid-header .grid-cell {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--vscode-editorGroupHeader-tabsBackground);
+    color: var(--vscode-sideBarTitle-foreground);
+    padding: 2px 6px;
+}
+
+.grid-header .grid-cell:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.sort-indicator {
+    margin-left: 4px;
+    opacity: 0.7;
+    font-size: 0.8em;
+    color: var(--vscode-foreground);
+}
+
+.grid-body {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+.grid-body::-webkit-scrollbar {
+    width: 10px;
+}
+
+.grid-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.grid-body::-webkit-scrollbar-thumb {
+    background-color: var(--vscode-scrollbarSlider-background);
+    border-radius: 4px;
+}
+
+.grid-body::-webkit-scrollbar-thumb:hover {
+    background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.grid-row {
+    display: flex;
+    cursor: pointer;
+    min-height: 22px;
+    align-items: center;
+    position: relative;
+    color: var(--vscode-foreground);
+    width: 100%;
+    flex-wrap: nowrap;
+}
+
+.grid-row:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.grid-row:active {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.grid-cell {
+    padding: 2px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    box-sizing: border-box;
+    position: relative;
+    flex: 0 0 auto;
+    line-height: 18px;
+    width: 0; /* Force cell to respect width and not grow */
+    min-width: 0; /* Allow content to be truncated */
+    transition: all 0.2s ease;
+}
+
+/* Add tooltip-like behavior for truncated cells */
+.grid-cell[data-truncated="true"] {
+    position: relative;
+}
+
+.grid-cell[data-truncated="true"]:hover::after {
+    content: attr(title);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 100;
+    background: var(--vscode-editor-background);
+    padding: 4px 8px;
+    border: 1px solid var(--vscode-focusBorder);
+    border-radius: 4px;
+    white-space: normal;
+    word-wrap: break-word;
+    max-width: 500px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Remove horizontal borders between cells */
+.grid-cell:not(:last-child) {
+    border-right: none;
+}
+
+/* Style for time, status, size, and duration columns */
+[data-field="time"],
+[data-field="status"],
+[data-field="size"],
+[data-field="duration"] {
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Add log icon to the first column, but not in header */
+.grid-body [data-field="user"] {
+    position: relative;
+    padding-left: 24px;  /* Space for icon */
+}
+
+.grid-body [data-field="user"]::before {
+    content: "⬤";  /* Solid circle as icon */
+    position: absolute;
+    left: 6px;
+    opacity: 0.4;
+    font-size: 10px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Align header with the text */
+.grid-header [data-field="user"] {
+    padding-left: 24px;
+}
+
+.resize-handle {
+    position: absolute;
+    right: -3px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
+    transition: background-color 0.2s;
+}
+
+.resize-handle:hover {
+    background-color: var(--vscode-focusBorder);
+}
+
+.resizing {
+    cursor: col-resize;
+}
+
+.resizing .grid-cell {
+    transition: none !important;
+}
+
+.resizing-active {
+    background-color: var(--vscode-focusBorder);
+}
+
+.empty-message {
+    padding: 10px;
+    text-align: center;
+    color: var(--vscode-descriptionForeground);
+}
