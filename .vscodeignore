@@ -3,6 +3,7 @@ node_modules
 
 # Exclude source TypeScript files
 src
+!src/images/agxLabs_logo.png
 !src/templates/logViewer.html
 !src/templates/logViewer.css
 !src/templates/logViewer.js
