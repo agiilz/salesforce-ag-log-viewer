@@ -130,11 +130,6 @@
           "group": "navigation@3"
         },
         {
-          "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
-          "when": "view == salesforceLogsView",
-          "group": "navigation@4"
-        },
-        {
           "command": "salesforce-ag-log-viewer.deleteAllLogs",
           "when": "view == salesforceLogsView",
           "group": "navigation@5"
