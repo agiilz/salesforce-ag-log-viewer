@@ -195,15 +195,8 @@ class LogViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
-        const columns = this._logDataProvider.columns;
         const templatePath = path.join(this._extensionUri.fsPath, 'src', 'templates', 'logViewer.html');
         let template = fs.readFileSync(templatePath, 'utf8');
-
-        // Replace the column headers placeholder
-        const columnHeaders = columns.map(col => 
-            `<div class="grid-cell" data-field="${col.field}" style="width: ${col.width}px; flex: 0 0 ${col.width}px">${col.label}</div>`
-        ).join('');
-        template = template.replace('<!--COLUMN_HEADERS-->', columnHeaders);
 
         // Replace the script and style sources with webview URIs
         template = template.replace(

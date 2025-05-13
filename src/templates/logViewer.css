@@ -162,6 +162,37 @@ body {
     padding-left: 24px;
 }
 
+/* Column widths */
+[data-field="user"] {
+    width: 150px;
+    flex: 0 0 150px;
+}
+
+[data-field="time"] {
+    width: 80px;
+    flex: 0 0 80px;
+}
+
+[data-field="status"] {
+    width: 200px;
+    flex: 0 0 200px;
+}
+
+[data-field="size"] {
+    width: 70px;
+    flex: 0 0 70px;
+}
+
+[data-field="operation"] {
+    width: 400px;
+    flex: 0 0 400px;
+}
+
+[data-field="duration"] {
+    width: 80px;
+    flex: 0 0 80px;
+}
+
 .resize-handle {
     position: absolute;
     right: -3px;
