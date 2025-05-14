@@ -3,6 +3,7 @@ import { Connection } from 'jsforce';
 import { DeveloperLog, DeveloperLogRecord } from './developerLog';
 import { LogViewer } from './logViewer';
 import { ensureTraceFlag } from './traceFlag';
+import { outputChannel } from './extension';
 
 export interface LogDataChangeEvent {
     data: any[];
@@ -44,7 +45,6 @@ export class LogDataProvider implements vscode.Disposable {
             currentUserOnly: boolean;
         }
     ) {
-        console.log('Initializing LogDataProvider');
         this.context = context;
         this.logViewer = new LogViewer(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
         this.logs = [];
@@ -105,7 +105,7 @@ export class LogDataProvider implements vscode.Disposable {
             return;
         }
         this.isRefreshing = true;
-        console.log('Refreshing logs...');
+        outputChannel.appendLine('Refreshing logs...');
         try {
             const refreshDate = new Date();
             let query = 'SELECT Id, Application, DurationMilliseconds, LogLength, LogUser.Name, Operation, Request, StartTime, Status FROM ApexLog';
@@ -130,13 +130,13 @@ export class LogDataProvider implements vscode.Disposable {
                 if (isInitialLoad) {
                     this.logs = newLogs;
                 } else {
-                    const uniqueLogEntries = new Map<string, DeveloperLog>();
-                    newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
-                    this.logs.forEach(log => {
-                        if (!uniqueLogEntries.has(log.id)) {
-                            uniqueLogEntries.set(log.id, log);
-                        }
-                    });
+            const uniqueLogEntries = new Map<string, DeveloperLog>();
+            newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
+                this.logs.forEach(log => {
+                    if (!uniqueLogEntries.has(log.id)) {
+                        uniqueLogEntries.set(log.id, log);
+                    }
+                });
                     this.logs = Array.from(uniqueLogEntries.values());
                 }
             } else if (isInitialLoad) {
@@ -157,7 +157,7 @@ export class LogDataProvider implements vscode.Disposable {
 
             this._notifyDataChange(isAutoRefresh);
         } catch (error: any) {
-            console.error('Log refresh error:', error);
+            outputChannel.appendLine(`Log refresh error: ${error}`);
             vscode.window.showErrorMessage(`Failed to refresh logs: ${error.message}`);
         } finally {
             this.isRefreshing = false;
@@ -172,7 +172,7 @@ export class LogDataProvider implements vscode.Disposable {
         this.isVisible = visible;
         if (visible && this.config.autoRefresh && this.autoRefreshPaused) {
             // Resume auto-refresh if it was enabled in config
-            this.startAutoRefresh();
+                this.startAutoRefresh();
         } else if (!visible && !this.autoRefreshPaused) {
             // Pause auto-refresh when panel becomes hidden
             this.stopAutoRefresh();
@@ -193,13 +193,14 @@ export class LogDataProvider implements vscode.Disposable {
             clearTimeout(this.autoRefreshScheduledId);
             this.autoRefreshScheduledId = undefined;
         }
-    }
+    }    
 
     private scheduleRefresh() {
         if (this.autoRefreshScheduledId) {
             clearTimeout(this.autoRefreshScheduledId);
         }
-        if (!this.autoRefreshPaused && !this.isRefreshing) {
+        // Only schedule refresh if panel is visible AND auto-refresh is not paused
+        if (this.isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
             this.autoRefreshScheduledId = setTimeout(() => this.refreshLogs(false, true), this.config.refreshInterval);
         }
     }

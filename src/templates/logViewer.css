@@ -68,6 +68,12 @@ body {
     scrollbar-width: thin;
     scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
     position: relative;
+    /* Improve rendering performance */
+    will-change: transform;
+    -webkit-backface-visibility: hidden;
+    -webkit-perspective: 1000;
+    backface-visibility: hidden;
+    perspective: 1000;
 }
 
 .grid-body::-webkit-scrollbar {
@@ -96,15 +102,20 @@ body {
     color: var(--vscode-foreground);
     min-width: min-content;
     flex-wrap: nowrap;
+    /* Add transform-origin for smoother updates */
+    transform-origin: center center;
 }
 
-.grid-row:hover {
+.grid-row:hover,
+.grid-row.selected {
     background: var(--vscode-list-hoverBackground);
 }
 
-.grid-row:active {
+.grid-row:active,
+.grid-row.selected:active {
     background: var(--vscode-list-activeSelectionBackground);
     color: var(--vscode-list-activeSelectionForeground);
+    transform: scale(0.999);
 }
 
 .grid-cell {
@@ -165,10 +176,17 @@ body {
     content: "⬤";  /* Solid circle as icon */
     position: absolute;
     left: 6px;
-    opacity: 0.4;
     font-size: 10px;
     display: inline-block;
     vertical-align: middle;
+    opacity: 0.4;
+    color: var(--vscode-testing-iconPassed); /* Default VS Code green color */
+}
+
+/* Style for read logs */
+.grid-row[data-read="true"] [data-field="user"]::before {
+    opacity: 0.4;
+    color: var(--vscode-foreground);
 }
 
 /* Align header with the text */

@@ -10,12 +10,13 @@ Preview:
 * **Real-time Log Updates**: Automatically refresh logs at configurable intervals
 * **Smart Auto-Refresh**: Saves resources by only refreshing when the log panel is visible
 * **Log Filtering**: Filter logs by user or operation
-* **Current User Focus**: Option to show only logs from the currently authenticated user
-* **Grid View**: Clear, organized display of logs with sortable columns and sticky headers
+* **Unread Log Indicators**: Green dots indicate unread logs, changing to gray once viewed
+* **Current User Focus**: Option to show only logs from the currently authenticated user or all organization logs
+* **Grid View**: Clear, organized display of logs with sortable columns
 * **Column Resizing**: Customize column widths to your preference
 * **Truncation Handling**: Long text is truncated with tooltips showing full content
 * **Batch Operations**: Delete multiple logs at once
-* **Performance Optimized**: Efficient handling of large log volumes
+* **Improved Log Loading**: Better handling of large logs with gzip compression
 
 ## Requirements
 
@@ -38,8 +39,13 @@ Preview:
    * Toggle auto-refresh
    * Filter logs
    * Switch between all users/current user
-   * Delete logs
+   * Delete downloaded logs
+   * Delete all logs from the current org
    * Configure options
+3. Visual Indicators:
+   * Green dot: Unread log
+   * Gray dot: Read log
+   * Selected row: Clearly highlighted current selection
 
 ## Extension Settings
 
@@ -54,6 +60,17 @@ This extension contributes the following settings:
    * Add option to enable logs for a specific user from extension
 
 ## Release Notes
+
+### 1.0.6
+
+UI and Performance Improvements:
+* Added visual indicators for unread logs
+* Improved grid performance
+* Fixed flickering during auto-refresh
+* Improved hover state persistence for the current selected log
+* Better handling of large logs with gzip compression
+* Consolidated output channels for cleaner logging
+* Added cache managment for already downloaded logs to avoid downloading them again
 
 ### 1.0.5
 

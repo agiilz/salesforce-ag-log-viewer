@@ -222,9 +222,7 @@
         document.removeEventListener('mouseup', stopResize);
         
         saveState();
-    }
-
-    function updateGrid(data) {
+    }    function updateGrid(data) {
         lastData = data;
         const gridBody = document.getElementById('grid-body');
         if (!gridBody) {
@@ -232,85 +230,164 @@
             return;
         }
 
-        // Store current scroll position
+        // Store current scroll position and selected log ID
         const scrollTop = gridBody.scrollTop;
-        
-        gridBody.innerHTML = '';
-        
-        if (!data || data.length === 0) {
-            const emptyRow = document.createElement('div');
-            emptyRow.className = 'grid-row';
-            emptyRow.style.justifyContent = 'center';
-            emptyRow.style.padding = '20px';
-            emptyRow.textContent = 'No logs found. Click refresh to fetch logs.';
-            gridBody.appendChild(emptyRow);
-            return;
-        }
+        const selectedRow = document.querySelector('.grid-row.selected');
+        const selectedLogId = selectedRow ? selectedRow.querySelector('[data-log-id]')?.dataset.logId : null;
 
-        // Always apply current sort if we have one
+        // Keep track of existing rows by their log ID
+        const existingRows = new Map();
+        gridBody.querySelectorAll('.grid-row').forEach(row => {
+            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
+            if (logId) {
+                existingRows.set(logId, row);
+            }
+        });
+
+        // Temp container for new rows
+        const fragment = document.createDocumentFragment();
+        const newRows = new Map();
+
+        // Apply current sort if we have one
         if (sortConfig.field) {
             data = sortData(data, sortConfig.field, sortConfig.ascending);
         }
-        
+
         data.forEach(row => {
-            const rowDiv = document.createElement('div');
-            rowDiv.className = 'grid-row';
-            rowDiv.onclick = () => {
-                vscode.postMessage({
-                    command: 'openLog',
-                    log: {
-                        id: row.id
-                    }
-                });
-            };
-            
-            function createCell(field, content) {
-                const cell = document.createElement('div');
-                cell.className = 'grid-cell';
-                cell.dataset.field = field;
-                cell.textContent = content;
+            let existingRow = existingRows.get(row.id);
+
+            if (existingRow) {
+                // Update existing row content if needed
+                updateRowContent(existingRow, row);
+                newRows.set(row.id, existingRow);
+                existingRows.delete(row.id);
+            } else {
+                // Create new row
+                const rowDiv = createRow(row);
+                newRows.set(row.id, rowDiv);
+                fragment.appendChild(rowDiv);
+            }
+        });
+
+        // Remove rows that are no longer in the data set
+        existingRows.forEach(row => {
+            row.style.opacity = '0';
+            row.addEventListener('transitionend', () => row.remove(), { once: true });
+        });
+
+        // Update DOM efficiently
+        if (fragment.children.length > 0) {
+            gridBody.append(fragment);
+        }
+
+        // Move existing rows to correct positions
+        newRows.forEach((rowDiv, id) => {
+            gridBody.appendChild(rowDiv);
+        });
+
+        // Restore scroll position and selection
+        gridBody.scrollTop = scrollTop;
+        if (selectedLogId) {
+            const rowToSelect = document.querySelector(`[data-log-id="${selectedLogId}"]`)?.parentElement;
+            if (rowToSelect) {
+                rowToSelect.classList.add('selected');
+            }
+        }
+    }
+
+    function updateRowContent(rowDiv, data) {
+        // Only update cell contents if they've changed
+        rowDiv.querySelectorAll('.grid-cell').forEach(cell => {
+            const field = cell.dataset.field;
+            if (field && data[field] !== cell.textContent) {
+                cell.textContent = data[field];
                 
-                // Get the column width from stored widths or column definitions
-                const width = columnWidths.get(field);
-                if (width) {
-                    cell.style.width = `${width}px`;
-                    cell.style.flex = `0 0 ${width}px`;
-                    
-                    // Check if content would be truncated
+                // Update truncation if needed
+                if (cell.dataset.truncated) {
+                    const width = parseInt(cell.style.width);
                     const tempSpan = document.createElement('span');
                     tempSpan.style.visibility = 'hidden';
                     tempSpan.style.position = 'absolute';
                     tempSpan.style.whiteSpace = 'nowrap';
-                    tempSpan.textContent = content;
+                    tempSpan.textContent = data[field];
                     document.body.appendChild(tempSpan);
                     
                     const contentWidth = tempSpan.offsetWidth;
                     document.body.removeChild(tempSpan);
                     
-                    // Account for padding in the cell
-                    const availableWidth = width - 12; // 6px padding on each side
-                    
+                    const availableWidth = width - 12;
                     if (contentWidth > availableWidth) {
                         cell.dataset.truncated = 'true';
-                        cell.title = content;
+                        cell.title = data[field];
+                    } else {
+                        delete cell.dataset.truncated;
+                        cell.removeAttribute('title');
                     }
                 }
+            }
+        });
+    }    function createRow(rowData) {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = 'grid-row';
+        rowDiv.dataset.read = 'false'; // Mark as unread by default
+
+        // Add data-log-id attribute for selection tracking
+        const idCell = document.createElement('div');
+        idCell.style.display = 'none';
+        idCell.dataset.logId = rowData.id;
+        rowDiv.appendChild(idCell);
+        
+        // Handle click event
+        rowDiv.onclick = () => {
+            // Remove selected class from any previously selected row
+            document.querySelectorAll('.grid-row.selected').forEach(row => {
+                if (row !== rowDiv) {
+                    row.classList.remove('selected');
+                }
+            });
+              // Add selected class to clicked row and mark as read
+            rowDiv.classList.add('selected');
+            rowDiv.dataset.read = 'true';
+            
+            vscode.postMessage({
+                command: 'openLog',
+                log: { id: rowData.id }
+            });
+        };
+        
+        const fields = ['user', 'time', 'status', 'size', 'operation', 'duration'];
+        fields.forEach(field => {
+            const cell = document.createElement('div');
+            cell.className = 'grid-cell';
+            cell.dataset.field = field;
+            cell.textContent = rowData[field];
+            
+            const width = columnWidths.get(field);
+            if (width) {
+                cell.style.width = `${width}px`;
+                cell.style.flex = `0 0 ${width}px`;
                 
-                return cell;
+                const tempSpan = document.createElement('span');
+                tempSpan.style.visibility = 'hidden';
+                tempSpan.style.position = 'absolute';
+                tempSpan.style.whiteSpace = 'nowrap';
+                tempSpan.textContent = rowData[field];
+                document.body.appendChild(tempSpan);
+                
+                const contentWidth = tempSpan.offsetWidth;
+                document.body.removeChild(tempSpan);
+                
+                const availableWidth = width - 12;
+                if (contentWidth > availableWidth) {
+                    cell.dataset.truncated = 'true';
+                    cell.title = rowData[field];
+                }
             }
             
-            rowDiv.appendChild(createCell('user', row.user));
-            rowDiv.appendChild(createCell('time', row.time));
-            rowDiv.appendChild(createCell('status', row.status));
-            rowDiv.appendChild(createCell('size', row.size));
-            rowDiv.appendChild(createCell('operation', row.operation));
-            rowDiv.appendChild(createCell('duration', row.duration));
-            
-            gridBody.appendChild(rowDiv);
+            rowDiv.appendChild(cell);
         });
-
-        // Restore scroll position after updating content
-        gridBody.scrollTop = scrollTop;
+        
+        return rowDiv;
     }
 
     // Initialize column widths from the header

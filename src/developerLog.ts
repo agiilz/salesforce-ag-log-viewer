@@ -30,10 +30,15 @@ export class DeveloperLog {
     constructor(
         private readonly entry: DeveloperLogRecord,
         private readonly connection: Connection
-    ) {}
-
-    public async getBody(): Promise<string> {
-        const response = await this.connection.tooling.request<string>(`/sobjects/ApexLog/${this.entry.Id}/Body`);
-        return response;
+    ) {}    public async getBody(): Promise<string> {
+        const result = await this.connection.tooling.request({
+            method: 'GET',
+            url: `${this.connection.tooling._baseUrl()}/sobjects/ApexLog/${this.entry.Id}/Body`,
+            headers: {
+                'Accept-Encoding': 'gzip',
+                'Accept': 'text/plain'
+            }
+        }) as string;
+        return result;
     }
 } 

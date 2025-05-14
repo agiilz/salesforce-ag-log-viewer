@@ -5,6 +5,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 
 let currentOrgUsername: string | undefined;
+const outputChannel = vscode.window.createOutputChannel('Salesforce Connection');
 
 export async function createConnection(): Promise<Connection> {
     try {
@@ -15,7 +16,7 @@ export async function createConnection(): Promise<Connection> {
 
         // Check if org has changed
         if (currentOrgUsername !== undefined && currentOrgUsername !== newOrgUsername) {
-            console.log(`Org changed in connection creation: ${currentOrgUsername} -> ${newOrgUsername}`);
+            outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
         }
         currentOrgUsername = newOrgUsername;
 
@@ -48,18 +49,18 @@ export async function getCurrentOrgFromConfig(): Promise<string | undefined> {
                 const configContent = await fs.promises.readFile(sfConfigPath, 'utf8');
                 const config = JSON.parse(configContent);
                 if (config['target-org']) {
-                    console.log(`Found target org in workspace config: ${config['target-org']}`);
+                    outputChannel.appendLine(`Found target org in workspace config: ${config['target-org']}`);
                     return config['target-org'];
                 }
             } catch (error) {
-                console.log(`No config found in workspace, checking user home directory`);
+                outputChannel.appendLine('No config found in workspace, checking user home directory');
             }
         }
 
         // Try user's home directory
         const homeDir = process.env.USERPROFILE ?? process.env.HOME;
         if (!homeDir) {
-            console.log('Could not find home directory');
+            outputChannel.appendLine('Could not find home directory');
             return undefined;
         }
 
@@ -68,18 +69,18 @@ export async function getCurrentOrgFromConfig(): Promise<string | undefined> {
             const configContent = await fs.promises.readFile(sfConfigPath, 'utf8');
             const config = JSON.parse(configContent);
             if (config['target-org']) {
-                console.log(`Found target org in user config: ${config['target-org']}`);
+                outputChannel.appendLine(`Found target org in user config: ${config['target-org']}`);
                 return config['target-org'];
             } else {
-                console.log('No target-org found in config file');
+                outputChannel.appendLine('No target-org found in config file');
                 return undefined;
             }
         } catch (error) {
-            console.log(`Error reading .sf/config.json: ${error}`);
+            outputChannel.appendLine(`Error reading .sf/config.json: ${error}`);
             return undefined;
         }
     } catch (error) {
-        console.log(`Error getting current org from config: ${error}`);
+        outputChannel.appendLine(`Error getting current org from config: ${error}`);
         return undefined;
     }
 }

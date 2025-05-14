@@ -8,13 +8,13 @@ import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSe
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
-let outputChannel: vscode.OutputChannel;
+export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 let activeProvider: LogViewProvider | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
-    outputChannel = vscode.window.createOutputChannel('Salesforce Log Viewer');
     context.subscriptions.push(outputChannel);
+    outputChannel.show(true); // Make output visible
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
 
     try {
@@ -38,7 +38,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Subscribe to data changes
         logProvider.onDidChangeData(({ data, isAutoRefresh }) => {
-            outputChannel.appendLine('Data changed event triggered');
             provider.updateView(data, isAutoRefresh);
         });
 
