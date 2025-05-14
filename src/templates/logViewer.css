@@ -17,15 +17,28 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--vscode-editor-background);
+    overflow: hidden;
+    position: relative;
+}
+
+.grid-header-container {
+    background: var(--vscode-editorGroupHeader-tabsBackground);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    overflow: hidden;
 }
 
 .grid-header {
+    margin-right: 10px; /* Account for scrollbar width */
     font-weight: 600;
     background: var(--vscode-editorGroupHeader-tabsBackground);
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 2;
     padding: 1px 0;
+    min-width: min-content;
+    display: flex;
 }
 
 .grid-header .grid-cell {
@@ -51,9 +64,10 @@ body {
 
 .grid-body {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+    position: relative;
 }
 
 .grid-body::-webkit-scrollbar {
@@ -80,7 +94,7 @@ body {
     align-items: center;
     position: relative;
     color: var(--vscode-foreground);
-    width: 100%;
+    min-width: min-content;
     flex-wrap: nowrap;
 }
 

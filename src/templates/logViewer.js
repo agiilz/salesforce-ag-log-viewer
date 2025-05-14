@@ -359,5 +359,13 @@
         
         // Initialize the resize handles
         initializeResizeHandles();
+
+        // Set up scroll synchronization
+        const gridBody = document.getElementById('grid-body');
+        const gridHeader = document.getElementById('grid-header');
+
+        gridBody.addEventListener('scroll', () => {
+            gridHeader.style.transform = `translateX(-${gridBody.scrollLeft}px)`;
+        });
     });
 })();

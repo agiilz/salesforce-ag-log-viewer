@@ -8,7 +8,7 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 * **Smart Auto-Refresh**: Saves resources by only refreshing when the log panel is visible
 * **Log Filtering**: Filter logs by user or operation
 * **Current User Focus**: Option to show only logs from the currently authenticated user
-* **Grid View**: Clear, organized display of logs with sortable columns
+* **Grid View**: Clear, organized display of logs with sortable columns and sticky headers
 * **Column Resizing**: Customize column widths to your preference
 * **Truncation Handling**: Long text is truncated with tooltips showing full content
 * **Batch Operations**: Delete multiple logs at once
@@ -29,7 +29,7 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 
 ## Usage
 
-1. Open the Salesforce Log Viewer panel from the activity bar
+1. Open the Salesforce Log Viewer panel from the bottom panel area
 2. Use the toolbar buttons to:
    * Refresh logs manually
    * Toggle auto-refresh
@@ -48,13 +48,8 @@ This extension contributes the following settings:
 
 ## Future Improvements
 
-   * The size of the columns can be improved to visualize better.
-   * Add option to enable logs for a specific user from extension.
-   * Add option to clear downloaded logs.
-
-## Known Issues
-
-   * Columns headers don't move when screen size is smaller and you need to scroll right.
+   * Add option to enable logs for a specific user from extension
+   * Add option to clear downloaded logs
 
 ## Release Notes
 
@@ -64,14 +59,7 @@ User experience improvements:
 * Fixed auto-scroll issue during auto-refresh to maintain scroll position
 * Changed extension default location to bottom panel instead of activity bar
 * Fixed duplicate trace flag creation issue
-
-### 1.0.3
-
-Fixes and improvements applied:
-* Auto-refreshing log viewer
-* Log filtering and management
-* Column customization and sorting
-* Performance optimizations
+* Improved grid layout and responsiveness
 
 ### 1.0.0
 
