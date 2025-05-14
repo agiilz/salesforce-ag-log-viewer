@@ -1,4 +1,4 @@
-# Exclude dependencies and dev files
+# Exclude all node_modules since we're bundling
 node_modules
 
 # Exclude source TypeScript files
