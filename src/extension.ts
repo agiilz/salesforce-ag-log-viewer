@@ -4,8 +4,7 @@ import { DeveloperLog } from './developerLog';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createConnection } from './connection';
-import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch } from './commands';
-import { ensureTraceFlag } from './traceFlag';
+import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs } from './commands';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -94,7 +93,8 @@ function registerCommands(context: vscode.ExtensionContext, provider: LogViewPro
         ['salesforce-ag-log-viewer.deleteAllLogs', deleteAllLogs],
         ['salesforce-ag-log-viewer.showOptions', showOptions],
         ['salesforce-ag-log-viewer.showSearchBox', showSearchBox],
-        ['salesforce-ag-log-viewer.clearSearch', clearSearch]
+        ['salesforce-ag-log-viewer.clearSearch', clearSearch],
+        ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs]
     ];
 
     const disposables = commands.map(([id, handler]) => 

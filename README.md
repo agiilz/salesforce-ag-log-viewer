@@ -49,17 +49,17 @@ This extension contributes the following settings:
 ## Future Improvements
 
    * Add option to enable logs for a specific user from extension
-   * Add option to clear downloaded logs
 
 ## Release Notes
 
-### 1.0.4
+### 1.0.5
 
 User experience improvements:
 * Fixed auto-scroll issue during auto-refresh to maintain scroll position
 * Changed extension default location to bottom panel instead of activity bar
 * Fixed duplicate trace flag creation issue
 * Improved grid layout and responsiveness
+* Added button to clear downloaded local log files
 
 ### 1.0.0
 

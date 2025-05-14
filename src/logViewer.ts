@@ -48,4 +48,10 @@ export class LogViewer {
         // Strip any duplicate ENTERING_MANAGED_PKG statements
         return log.replace(/(^[0-9:.() ]+\|ENTERING_MANAGED_PKG\|.*\n)+/gm, '$1');
     }
-} 
+
+    public async clearDownloadedLogs(): Promise<void> {
+        if (this.logsPath && await fs.pathExists(this.logsPath)) {
+            await fs.emptyDir(this.logsPath);
+        }
+    }
+}

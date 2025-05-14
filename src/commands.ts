@@ -213,3 +213,25 @@ export async function clearSearch() {
         vscode.window.showErrorMessage(`Failed to clear search: ${errorMessage}`);
     }
 }
+
+export async function clearDownloadedLogs() {
+    const confirmation = await vscode.window.showWarningMessage(
+        'Are you sure you want to clear all downloaded log files? This action cannot be undone.',
+        { modal: true },
+        'Clear Downloaded Logs'
+    );
+
+    if (confirmation !== 'Clear Downloaded Logs') {
+        vscode.window.showInformationMessage('Clear downloaded logs operation cancelled.');
+        return;
+    }
+
+    try {
+        const provider = await getLogDataProvider();
+        await provider.logViewer.clearDownloadedLogs();
+        vscode.window.showInformationMessage('Downloaded logs cleared successfully.');
+    } catch (error: any) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to clear downloaded logs: ${errorMessage}`);
+    }
+}

@@ -2,7 +2,7 @@
   "name": "salesforce-ag-log-viewer",
   "displayName": "Salesforce AG Log Viewer",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "aGxLabs",
   "author": {
     "name": "aGx Labs"
@@ -111,6 +111,11 @@
         "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
         "title": "Toggle Auto Refresh",
         "icon": "$(sync)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
+        "title": "Clear Downloaded Logs",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -129,6 +134,11 @@
           "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
           "when": "view == salesforceLogsView",
           "group": "navigation@3"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@4"
         },
         {
           "command": "salesforce-ag-log-viewer.deleteAllLogs",
