@@ -25,7 +25,7 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 1. Install Visual Studio Code 1.60.0 or higher
 2. Install the Salesforce CLI
 3. Install this extension from the VS Code marketplace
-4. Authenticate with your Salesforce org using `sf org login web`
+4. Authenticate with your Salesforce org inside VSCode
 
 ## Usage
 
@@ -46,9 +46,17 @@ This extension contributes the following settings:
 * `salesforceAgLogViewer.refreshInterval`: Set the auto-refresh interval (milliseconds)
 * `salesforceAgLogViewer.currentUserOnly`: Show logs only for the current user
 
+## Future Improvements
+
+   * The size of the columns can be improved to visualize better.
+   * Add option to enable logs for a specific user from extension.
+   * Add option to clear downloaded logs.
+
 ## Known Issues
 
-None at this time.
+   * When Installing the extension, the panel appears at the left panel instead at the bottom panel.
+   * With auto-refresh on, each time the panel refresh, it automatically scroll up to the top of the list ‼️
+   * Columns headers don't move when screen size is smaller and you need to scroll right.
 
 ## Release Notes
 
