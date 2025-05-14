@@ -2,6 +2,10 @@
 
 A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability. Inspired by the log feature in [@Vlocode](https://github.com/Codeneos/vlocode)
 
+Preview:
+![image](https://github.com/user-attachments/assets/61c10221-c794-4865-8fcb-9beb7f40a28b)
+![image](https://github.com/user-attachments/assets/ec8e48de-a41c-4b5b-a6ea-ee34e99fdda5)
+
 ## Features
 
 * **Real-time Log Updates**: Automatically refresh logs at configurable intervals
