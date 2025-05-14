@@ -54,11 +54,24 @@ This extension contributes the following settings:
 
 ## Known Issues
 
-   * When Installing the extension, the panel appears at the left panel instead at the bottom panel.
-   * With auto-refresh on, each time the panel refresh, it automatically scroll up to the top of the list ‼️
    * Columns headers don't move when screen size is smaller and you need to scroll right.
 
 ## Release Notes
+
+### 1.0.4
+
+User experience improvements:
+* Fixed auto-scroll issue during auto-refresh to maintain scroll position
+* Changed extension default location to bottom panel instead of activity bar
+* Fixed duplicate trace flag creation issue
+
+### 1.0.3
+
+Fixes and improvements applied:
+* Auto-refreshing log viewer
+* Log filtering and management
+* Column customization and sorting
+* Performance optimizations
 
 ### 1.0.0
 

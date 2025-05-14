@@ -232,6 +232,9 @@
             return;
         }
 
+        // Store current scroll position
+        const scrollTop = gridBody.scrollTop;
+        
         gridBody.innerHTML = '';
         
         if (!data || data.length === 0) {
@@ -305,6 +308,9 @@
             
             gridBody.appendChild(rowDiv);
         });
+
+        // Restore scroll position after updating content
+        gridBody.scrollTop = scrollTop;
     }
 
     // Initialize column widths from the header
