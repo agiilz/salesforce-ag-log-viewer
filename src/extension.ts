@@ -198,15 +198,9 @@ class LogViewProvider implements vscode.WebviewViewProvider {
         const templatePath = path.join(this._extensionUri.fsPath, 'src', 'templates', 'logViewer.html');
         let template = fs.readFileSync(templatePath, 'utf8');
 
-        // Replace the script and style sources with webview URIs
-        template = template.replace(
-            'href="logViewer.css"',
-            `href="${styleUri}"`
-        );
-        template = template.replace(
-            'src="logViewer.js"',
-            `src="${scriptUri}"`
-        );
+        // Replace template variables with actual URIs
+        template = template.replace('${scriptUri}', scriptUri.toString());
+        template = template.replace('${styleUri}', styleUri.toString());
 
         return template;
     }
