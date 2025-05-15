@@ -10,7 +10,10 @@ export class LogViewer {
     static readonly END_MARKER = '|CODE_UNIT_FINISHED|execute_anonymous_apex\n';
     private activeDownload: boolean = false;
 
-    constructor(private readonly storagePath?: string) {}
+    constructor(
+        private readonly storagePath?: string,
+        private readonly activeProvider?: any
+    ) {}
 
     public get logsPath(): string | undefined {
         return this.storagePath ? path.resolve(this.storagePath, '.logs') : undefined;
@@ -31,7 +34,9 @@ export class LogViewer {
         const logPath = this.getLogPath(log);
         if (!logPath) return false;
         return await fs.pathExists(logPath);
-    }    public async showLog(log: DeveloperLog): Promise<void> {
+    }
+
+    public async showLog(log: DeveloperLog): Promise<void> {
         // Check if log already exists
         if (await this.logExists(log)) {
             const logPath = this.getLogPath(log);
@@ -40,6 +45,7 @@ export class LogViewer {
             if (document) {
                 await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
                 await vscode.window.showTextDocument(document, { preview: true });
+                this.notifyLogDownloaded(log.id);
                 return;
             }
         }
@@ -58,11 +64,21 @@ export class LogViewer {
             outputChannel.appendLine('Processing and saving log...');
             await this.openLog(logBody, fileName);
             outputChannel.appendLine('Log downloaded and opened successfully');
+            this.notifyLogDownloaded(log.id);
         } catch (error) {
             outputChannel.appendLine(`Error downloading log: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
         } finally {
             this.activeDownload = false;
+        }
+    }
+
+    private notifyLogDownloaded(logId: string) {
+        if (this.activeProvider?.postMessage) {
+            this.activeProvider.postMessage({ 
+                type: 'logDownloaded',
+                logId: logId 
+            });
         }
     }
 
@@ -75,7 +91,6 @@ export class LogViewer {
             
             try {
                 // Try to open the existing file first
-                const stats = await fs.stat(fullLogPath);
                 const document = await vscode.workspace.openTextDocument(fullLogPath);
                 if (document) {
                     await vscode.languages.setTextDocumentLanguage(document, 'apexlog');

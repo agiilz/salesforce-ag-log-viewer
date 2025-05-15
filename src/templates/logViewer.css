@@ -183,10 +183,28 @@ body {
     color: var(--vscode-testing-iconPassed); /* Default VS Code green color */
 }
 
+/* Style for downloading logs */
+.grid-body .grid-row[data-downloading="true"] [data-field="user"]::before {
+    color: var(--vscode-terminal-ansiYellow);
+    opacity: 0.8;
+}
+
 /* Style for read logs */
 .grid-row[data-read="true"] [data-field="user"]::before {
     opacity: 0.4;
     color: var(--vscode-foreground);
+}
+
+/* Style for read logs */
+.grid-row[data-read="true"][data-downloading="false"] [data-field="user"]::before {
+    opacity: 0.4;
+    color: var(--vscode-foreground);
+}
+
+/* Default state (unread and not downloading) */
+.grid-body .grid-row[data-downloading="false"][data-read="false"] [data-field="user"]::before {
+    opacity: 0.4;
+    color: var(--vscode-testing-iconPassed);
 }
 
 /* Align header with the text */

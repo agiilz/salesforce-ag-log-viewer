@@ -38,20 +38,20 @@ export class LogDataProvider implements vscode.Disposable {
 
     constructor(
         context: vscode.ExtensionContext,
-        public connection: Connection,  // Changed from readonly to modifiable
+        public connection: Connection,  
         private readonly config: {
             autoRefresh: boolean;
             refreshInterval: number;
             currentUserOnly: boolean;
-        }
+        },
+        private readonly activeProvider?: any
     ) {
         this.context = context;
-        this.logViewer = new LogViewer(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+        this.logViewer = new LogViewer(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
         this.logs = [];
         this.filteredLogs = [];
-        this.autoRefreshPaused = !this.config.autoRefresh; // Initialize based on config
+        this.autoRefreshPaused = !this.config.autoRefresh;
         
-        // Start auto-refresh if enabled in config
         if (this.config.autoRefresh) {
             this.startAutoRefresh();
         }
@@ -64,9 +64,10 @@ export class LogDataProvider implements vscode.Disposable {
             autoRefresh: boolean;
             refreshInterval: number;
             currentUserOnly: boolean;
-        }
+        },
+        activeProvider?: any
     ): Promise<LogDataProvider> {
-        const provider = new LogDataProvider(context, connection, config);
+        const provider = new LogDataProvider(context, connection, config, activeProvider);
         await provider.initialize();
         return provider;
     }

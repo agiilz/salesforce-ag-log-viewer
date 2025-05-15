@@ -127,16 +127,12 @@
     }
 
     function sortByColumn(field) {
-        console.log('Sorting by column:', field, 'Current config:', sortConfig);
-        
         if (sortConfig.field === field) {
             sortConfig.ascending = !sortConfig.ascending;
         } else {
             sortConfig.field = field;
             sortConfig.ascending = true;
         }
-
-        console.log('New sort config:', sortConfig);
 
         const sortedData = sortData(lastData, field, sortConfig.ascending);
         updateGrid(sortedData);
@@ -240,6 +236,19 @@
             isInitialized = true;
         }
 
+        // Store current states before update
+        const currentStates = new Map();
+        document.querySelectorAll('.grid-row').forEach(row => {
+            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
+            if (logId) {
+                currentStates.set(logId, {
+                    read: row.dataset.read === 'true',
+                    downloading: row.dataset.downloading === 'true',
+                    selected: row.classList.contains('selected')
+                });
+            }
+        });
+
         lastData = data;
         const gridBody = document.getElementById('grid-body');
         if (!gridBody) {
@@ -248,9 +257,6 @@
         }
 
         const scrollTop = gridBody.scrollTop;
-        const selectedRow = document.querySelector('.grid-row.selected');
-        const selectedLogId = selectedRow ? selectedRow.querySelector('[data-log-id]')?.dataset.logId : null;
-
         gridBody.innerHTML = '';
 
         if (sortConfig.field) {
@@ -260,20 +266,16 @@
         const fragment = document.createDocumentFragment();
 
         data.forEach(row => {
-            const rowDiv = createRow(row);
+            const previousState = currentStates.get(row.id);
+            const rowDiv = createRow(row, previousState);
+            if (previousState?.selected) {
+                rowDiv.classList.add('selected');
+            }
             fragment.appendChild(rowDiv);
         });
 
         gridBody.appendChild(fragment);
-
         gridBody.scrollTop = scrollTop;
-        if (selectedLogId) {
-            const rowToSelect = document.querySelector(`[data-log-id="${selectedLogId}"]`)?.parentElement;
-            if (rowToSelect) {
-                rowToSelect.classList.add('selected');
-            }
-        }
-
         saveState();
     }
 
@@ -308,12 +310,13 @@
         });
     }
 
-    function createRow(rowData) {
+    function createRow(rowData, previousState = null) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'grid-row';
         
-        // Set initial read state based on tracked IDs
-        rowDiv.dataset.read = readLogIds.has(rowData.id) ? 'true' : 'false';
+        // Set initial states based on previous state or readLogIds
+        rowDiv.dataset.read = previousState ? previousState.read.toString() : readLogIds.has(rowData.id).toString();
+        rowDiv.dataset.downloading = previousState ? previousState.downloading.toString() : 'false';
 
         const idCell = document.createElement('div');
         idCell.style.display = 'none';
@@ -327,9 +330,7 @@
                 }
             });
             rowDiv.classList.add('selected');
-            rowDiv.dataset.read = 'true';
-            readLogIds.add(rowData.id); // Add to read logs set
-            saveState(); // Save the updated state
+            rowDiv.dataset.downloading = 'true';
             
             vscode.postMessage({
                 command: 'openLog',
@@ -377,6 +378,17 @@
         
         if (message.type === 'updateData') {
             updateGrid(message.data);
+        } else if (message.type === 'logDownloaded') {
+            // When a log is downloaded, update its state
+            const logId = message.logId;
+            console.log('Log downloaded:', logId);
+            const row = document.querySelector(`[data-log-id="${logId}"]`)?.parentElement;
+            if (row) {
+                row.dataset.downloading = 'false';
+                row.dataset.read = 'true';
+                readLogIds.add(logId);
+                saveState();
+            }
         }
     });
 

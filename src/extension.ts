@@ -18,20 +18,20 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
 
     try {
-        // Set up config file watchers
-        setupConfigFileWatchers(context);
-
-        // Create and initialize the log provider
-        const logProvider = await getLogDataProvider();
-        await logProvider.refreshLogs(true);
-        outputChannel.appendLine('Initial logs fetched');
-
-        // Create and register the webview provider
-        const provider = new LogViewProvider(context.extensionUri, logProvider);
+        // Create and register the webview provider first
+        const provider = new LogViewProvider(context.extensionUri);
         activeProvider = provider;
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('salesforceLogsView', provider)
         );
+
+        // Set up config file watchers
+        setupConfigFileWatchers(context);
+
+        // Create and initialize the log provider with the webview provider
+        const logProvider = await getLogDataProvider();
+        await logProvider.refreshLogs(true);
+        outputChannel.appendLine('Initial logs fetched');
 
         // Register commands
         registerCommands(context, provider);
@@ -105,43 +105,27 @@ function registerCommands(context: vscode.ExtensionContext, provider: LogViewPro
 
 class LogViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
+    private _logDataProvider?: LogDataProvider;
 
     constructor(
-        private readonly _extensionUri: vscode.Uri,
-        private _logDataProvider: LogDataProvider
-    ) {
-        // Subscribe to data changes
-        this._logDataProvider.onDidChangeData(({ data, isAutoRefresh }) => {
-            this.updateView(data, isAutoRefresh);
-        });
-    }
+        private readonly _extensionUri: vscode.Uri
+    ) {}
 
     public async refresh(): Promise<void> {
-        await this._logDataProvider.refreshLogs(false, true);
+        if (this._logDataProvider) {
+            await this._logDataProvider.refreshLogs(false, true);
+        }
     }
 
-    public updateLogDataProvider(newProvider: LogDataProvider) {
-        // Unsubscribe from old provider
-        this._logDataProvider.dispose();
-        // Update to new provider
-        this._logDataProvider = newProvider;
-        // Subscribe to new provider's events
-        this._logDataProvider.onDidChangeData(({ data, isAutoRefresh }) => {
-            this.updateView(data, isAutoRefresh);
-        });
-        // Update the view with new data
-        this.updateView();
-    }
-
-    private postMessageToWebview(message: any) {
+    public postMessage(message: any) {
         if (this._view) {
             this._view.webview.postMessage(message);
         }
     }
 
     public updateView(data?: any[], isAutoRefresh: boolean = false) {
-        const gridData = data || this._logDataProvider.getGridData();
-        this.postMessageToWebview({ 
+        const gridData = data || this._logDataProvider?.getGridData();
+        this.postMessage({ 
             type: 'updateData',
             data: gridData,
             isAutoRefresh: isAutoRefresh
@@ -154,13 +138,14 @@ class LogViewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
+        this._logDataProvider = logDataProvider;
 
         // Set initial visibility state
-        this._logDataProvider.setVisibility(webviewView.visible);
+        this._logDataProvider?.setVisibility(webviewView.visible);
 
         // Handle visibility changes
         webviewView.onDidChangeVisibility(async () => {
-            this._logDataProvider.setVisibility(webviewView.visible);
+            this._logDataProvider?.setVisibility(webviewView.visible);
             // If becoming visible, just refresh the logs
             if (webviewView.visible) {
                 await this.refresh();
@@ -186,7 +171,7 @@ class LogViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'ready') {
-                const initialData = this._logDataProvider.getGridData();
+                const initialData = this._logDataProvider?.getGridData();
                 this.updateView(initialData, false);
             } else if (message.command === 'openLog') {
                 await openLog({ id: message.log.id });
@@ -225,7 +210,8 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
                 autoRefresh: config.get('autoRefresh') ?? true,
                 refreshInterval: config.get('refreshInterval') ?? 5000,
                 currentUserOnly: config.get('currentUserOnly') ?? true
-            }
+            },
+            activeProvider
         );
     }
     return logDataProvider;
