@@ -44,6 +44,7 @@ Preview:
    * Configure options
 3. Visual Indicators:
    * Green dot: Unread log
+   * Yellow dot: Downloading log
    * Gray dot: Read log
    * Selected row: Clearly highlighted current selection
 
@@ -58,8 +59,16 @@ This extension contributes the following settings:
 ## Future Improvements
 
    * Add option to enable logs for a specific user from extension
+   * Add an option to filter to show only DEBUG_LOG in the downloaded log
 
 ## Release Notes
+
+### 1.0.9
+
+Visual Indicator Improvements:
+* Added yellow circle indicator while logs are being downloaded
+* Fixed state preservation during auto-refresh
+* Improved visual feedback when downloading and reading logs
 
 ### 1.0.6
 
