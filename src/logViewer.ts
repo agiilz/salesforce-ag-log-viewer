@@ -20,9 +20,12 @@ export class LogViewer {
     }
 
     private getLogFileName(log: DeveloperLog): string {
-        return DateTime.fromJSDate(log.startTime)
-            .toFormat('MM-dd-yyyy_HH-mm-ss')
-            .replace(/\//g, '-') + '_' + log.id + '.log';
+        // Deterministic filename: based on log id and start time only
+        return (
+            DateTime.fromJSDate(log.startTime)
+                .toFormat('MM-dd-yyyy_HH-mm-ss')
+                .replace(/\//g, '-') + '_' + log.id + '.log'
+        );
     }
 
     private getLogPath(log: DeveloperLog): string | undefined {
@@ -37,32 +40,40 @@ export class LogViewer {
     }
 
     public async showLog(log: DeveloperLog): Promise<void> {
-        // Check if log already exists
-        if (await this.logExists(log)) {
-            const logPath = this.getLogPath(log);
-            outputChannel.appendLine(`Opening cached log: ${logPath}`);
-            const document = await vscode.workspace.openTextDocument(logPath!);
-            if (document) {
-                await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
-                await vscode.window.showTextDocument(document, { preview: true });
-                this.notifyLogDownloaded(log.id);
-                return;
+        const logPath = this.getLogPath(log);
+        let fileExisted = false;
+        if (logPath) {
+            fileExisted = await fs.pathExists(logPath);
+            // If the file exists and is not deleted, just focus it in a new tab
+            if (fileExisted) {
+                outputChannel.appendLine(`Opening cached log: ${logPath}`);
+                const document = await vscode.workspace.openTextDocument(logPath);
+                if (document) {
+                    await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
+                    await vscode.window.showTextDocument(document, { preview: false });
+                    this.notifyLogDownloaded(log.id);
+                    return;
+                }
+            } else {
+                // If the file was deleted but an editor is open, close it before recreating
+                const openEditors = vscode.window.visibleTextEditors;
+                for (const editor of openEditors) {
+                    if (editor.document.uri.fsPath === logPath) {
+                        await vscode.window.showTextDocument(editor.document, { preview: false });
+                        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+                        await new Promise(res => setTimeout(res, 300));
+                    }
+                }
             }
         }
-
-        if (this.activeDownload) {
-            vscode.window.showInformationMessage('Another log is currently being downloaded. Please wait.');
-            return;
-        }
-
         this.activeDownload = true;
-        
         try {
             outputChannel.appendLine(`Downloading new log: ${log.operation} (${(log.size / 1024).toFixed(1)} KB)`);
             const logBody = await log.getBody();
             const fileName = this.getLogFileName(log);
             outputChannel.appendLine('Processing and saving log...');
             await this.openLog(logBody, fileName);
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
             outputChannel.appendLine('Log downloaded and opened successfully');
             this.notifyLogDownloaded(log.id);
         } catch (error) {
@@ -84,34 +95,21 @@ export class LogViewer {
 
     private async openLog(logBody: string, logFileName: string): Promise<void> {
         const formattedLog = this.formatLog(logBody);
-
         if (this.logsPath) {
             const fullLogPath = path.join(this.logsPath, logFileName);
             await fs.ensureDir(this.logsPath);
-            
-            try {
-                // Try to open the existing file first
-                const document = await vscode.workspace.openTextDocument(fullLogPath);
-                if (document) {
-                    await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
-                    await vscode.window.showTextDocument(document, { preview: true });
-                    return;
-                }
-            } catch (error) {
-                // File doesn't exist or can't be accessed, write new file
-                await fs.writeFile(fullLogPath, formattedLog);
-
-                const document = await vscode.workspace.openTextDocument(fullLogPath);
-                if (document) {
-                    await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
-                    await vscode.window.showTextDocument(document, { preview: true });
-                }
+            await fs.writeFile(fullLogPath, formattedLog);
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+            const document = await vscode.workspace.openTextDocument(fullLogPath);
+            if (document) {
+                await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
+                await vscode.window.showTextDocument(document, { preview: false });
             }
         } else {
             const document = await vscode.workspace.openTextDocument({ content: formattedLog });
             if (document) {
                 await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
-                await vscode.window.showTextDocument(document, { preview: true });
+                await vscode.window.showTextDocument(document, { preview: false });
             }
         }
     }

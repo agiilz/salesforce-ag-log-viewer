@@ -30,8 +30,8 @@ export class LogDataProvider implements vscode.Disposable {
     readonly columns = [
         { label: 'User', field: 'user', width: 150 },
         { label: 'Time', field: 'time', width: 80 },
-        { label: 'Status', field: 'status', width: 200 },
-        { label: 'Size', field: 'size', width: 70 },
+        { label: 'Status', field: 'status', width: 80 },
+        { label: 'Size', field: 'size', width: 80 },
         { label: 'Operation', field: 'operation', width: 400 },
         { label: 'Duration', field: 'duration', width: 80 }
     ];
@@ -51,10 +51,7 @@ export class LogDataProvider implements vscode.Disposable {
         this.logs = [];
         this.filteredLogs = [];
         this.autoRefreshPaused = !this.config.autoRefresh;
-        
-        if (this.config.autoRefresh) {
-            this.startAutoRefresh();
-        }
+        // Do NOT start auto-refresh here. Only start when panel is visible.
     }
 
     static async create(
@@ -77,14 +74,11 @@ export class LogDataProvider implements vscode.Disposable {
             if (!this.currentUserId) {
                 this.currentUserId = await this.getCurrentUserId();
             }
-            
-            // Only create trace flag if we're in currentUserOnly mode
-            if (this.config.currentUserOnly && this.currentUserId) {
+            // Always create trace flag for the current user, regardless of mode
+            if (this.currentUserId) {
                 await ensureTraceFlag(this.connection, this.currentUserId);
-                await this.refreshLogs(true, false);
-            } else {
-                await this.refreshLogs(true, false);
             }
+            // Do NOT call refreshLogs here or anywhere except when panel is visible.
         } catch (error) {
             console.error('LogDataProvider initialization error:', error);
             throw error;
@@ -120,40 +114,34 @@ export class LogDataProvider implements vscode.Disposable {
             const result = await this.connection.tooling.query<DeveloperLogRecord>(query);
             this.lastRefresh = refreshDate;
 
-            if (isInitialLoad) {
+            // Always clear logs and filteredLogs if no records
+            if (!result.records || result.records.length === 0) {
                 this.logs = [];
                 this.filteredLogs = [];
-            }
-
-            if (result.records?.length > 0) {
+            } else {
                 const newLogs = result.records.map(record => new DeveloperLog(record, this.connection));
-
                 if (isInitialLoad) {
                     this.logs = newLogs;
                 } else {
-            const uniqueLogEntries = new Map<string, DeveloperLog>();
-            newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
-                this.logs.forEach(log => {
-                    if (!uniqueLogEntries.has(log.id)) {
-                        uniqueLogEntries.set(log.id, log);
-                    }
-                });
+                    const uniqueLogEntries = new Map<string, DeveloperLog>();
+                    newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
+                    this.logs.forEach(log => {
+                        if (!uniqueLogEntries.has(log.id)) {
+                            uniqueLogEntries.set(log.id, log);
+                        }
+                    });
                     this.logs = Array.from(uniqueLogEntries.values());
                 }
-            } else if (isInitialLoad) {
-                this.logs = [];
-            }
-
-            this.logs = this.logs
-                .filter(log => log.operation !== '<empty>')
-                .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
-                .slice(0, 100);
-
-            if (isInitialLoad) {
-                this.searchText = '';
-                this.filteredLogs = [...this.logs];
-            } else {
-                this._filterLogs();
+                this.logs = this.logs
+                    .filter(log => log.operation !== '<empty>')
+                    .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+                    .slice(0, 100);
+                if (isInitialLoad) {
+                    this.searchText = '';
+                    this.filteredLogs = [...this.logs];
+                } else {
+                    this._filterLogs();
+                }
             }
 
             this._notifyDataChange(isAutoRefresh);
@@ -292,21 +280,17 @@ export class LogDataProvider implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
 
-        // Get current user ID and ensure trace flag
-        if (this.config.currentUserOnly) {
-            try {
-                this.currentUserId = await this.getCurrentUserId();
-                
-                if (this.currentUserId) {
-                    await ensureTraceFlag(this.connection, this.currentUserId);
-                }
-            } catch (error: any) {
-                vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
-                this.config.currentUserOnly = false;
-                await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
+        // Always ensure trace flag for the current user, regardless of mode
+        try {
+            this.currentUserId = await this.getCurrentUserId();
+            if (this.currentUserId) {
+                await ensureTraceFlag(this.connection, this.currentUserId);
             }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
+            this.config.currentUserOnly = false;
+            await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
         }
-        
         await this.refreshLogs(true, false);
         this._notifyDataChange(false);
     }
@@ -337,5 +321,9 @@ export class LogDataProvider implements vscode.Disposable {
         }
         // Refresh logs with the new connection
         await this.refreshLogs(true, false);
+    }
+
+    public notifyDataChange(isAutoRefresh: boolean = false) {
+        this._notifyDataChange(isAutoRefresh);
     }
 }

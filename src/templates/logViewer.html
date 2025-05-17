@@ -7,7 +7,7 @@
     <link rel="stylesheet" type="text/css" href="${styleUri}">
 </head>
 <body>
-    <div class="grid">
+    <div class="grid" style="position:relative;">
         <div class="grid-header-container">
             <div class="grid-row grid-header" id="grid-header">
                 <div class="grid-cell" data-field="user">User</div>
@@ -19,6 +19,9 @@
             </div>
         </div>
         <div class="grid-body" id="grid-body"></div>
+        <div id="inline-search-bar" style="display:none;position:absolute;left:0;right:0;bottom:0;z-index:10;align-items:center;padding:8px 8px 0 8px;background:var(--vscode-editor-background);">
+            <input id="inline-search-input" type="text" placeholder="Filter logs by operation or username..." style="flex:1;max-width:350px;padding:4px 8px;border-radius:4px;border:1px solid var(--vscode-input-border);background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-size:1em;" />
+        </div>
     </div>
     <script src="${scriptUri}"></script>
 </body>

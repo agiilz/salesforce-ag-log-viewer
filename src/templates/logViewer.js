@@ -10,6 +10,19 @@
     let isInitialized = false;
     let readLogIds = new Set(); // Track which logs have been read
 
+    // On load, always clear any cached data to ensure only fresh logs are shown
+    try {
+        vscode.setState({
+            data: [],
+            columnWidths: Array.from(columnWidths.entries()),
+            sortConfig,
+            readLogIds: Array.from(readLogIds)
+        });
+        lastData = [];
+    } catch (e) {
+        console.error('Failed to clear state on load:', e);
+    }
+
     // Initialize state
     try {
         const state = vscode.getState() || {};
@@ -259,6 +272,23 @@
         const scrollTop = gridBody.scrollTop;
         gridBody.innerHTML = '';
 
+        // If no data, show empty message and clear cache
+        if (!data || data.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'empty-message';
+            emptyMsg.textContent = 'No logs found for this org.';
+            gridBody.appendChild(emptyMsg);
+            lastData = [];
+            // Clear cached state
+            vscode.setState({
+                data: [],
+                columnWidths: Array.from(columnWidths.entries()),
+                sortConfig,
+                readLogIds: Array.from(readLogIds)
+            });
+            return;
+        }
+
         if (sortConfig.field) {
             data = sortData(data, sortConfig.field, sortConfig.ascending);
         }
@@ -389,21 +419,50 @@
                 readLogIds.add(logId);
                 saveState();
             }
+        } else if (message.type === 'showSearchBox') {
+            showInlineSearchBox();
+        } else if (message.type === 'orgChanged') {
+            // Hide search bar on org change only
+            const searchBar = document.getElementById('inline-search-bar');
+            if (searchBar && searchBar.style.display === 'flex') {
+                searchBar.style.display = 'none';
+            }
         }
     });
 
+    function showInlineSearchBox() {
+        const searchBar = document.getElementById('inline-search-bar');
+        const input = document.getElementById('inline-search-input');
+        if (searchBar && input) {
+            if (searchBar.style.display === 'flex') {
+                searchBar.style.display = 'none';
+                vscode.postMessage({ command: 'inlineSearch', text: '' });
+            } else {
+                searchBar.style.display = 'flex';
+                input.value = '';
+                input.focus();
+                input.oninput = (e) => {
+                    vscode.postMessage({ command: 'inlineSearch', text: input.value });
+                };
+                input.onkeydown = (e) => {
+                    if (e.key === 'Escape') {
+                        searchBar.style.display = 'none';
+                        vscode.postMessage({ command: 'inlineSearch', text: '' });
+                    }
+                };
+            }
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         vscode.postMessage({ command: 'ready' });
-        
         const gridBody = document.getElementById('grid-body');
         const gridHeader = document.getElementById('grid-header');
-
         if (gridBody && gridHeader) {
             gridBody.addEventListener('scroll', () => {
                 gridHeader.style.transform = `translateX(-${gridBody.scrollLeft}px)`;
             });
         }
-        
         if (lastData.length > 0) {
             updateGrid(lastData);
         }

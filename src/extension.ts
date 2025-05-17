@@ -29,19 +29,23 @@ export async function activate(context: vscode.ExtensionContext) {
         setupConfigFileWatchers(context);
 
         // Create and initialize the log provider with the webview provider
-        const logProvider = await getLogDataProvider();
-        await logProvider.refreshLogs(true);
-        outputChannel.appendLine('Initial logs fetched');
+        await getLogDataProvider(); // Only create, do not refresh logs yet
+        outputChannel.appendLine('Log provider initialized');
 
         // Register commands
         registerCommands(context, provider);
 
         // Subscribe to data changes
-        logProvider.onDidChangeData(({ data, isAutoRefresh }) => {
+        logDataProvider?.onDidChangeData(({ data, isAutoRefresh }) => {
             provider.updateView(data, isAutoRefresh);
         });
 
         outputChannel.appendLine('Extension activation complete');
+
+        // After showing output, always focus the Salesforce Log Viewer panel webview
+        setTimeout(() => {
+            vscode.commands.executeCommand('salesforceLogsView.focus');
+        }, 500); // Small delay to ensure output is shown first
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
         outputChannel.appendLine(`Activation error: ${errorMessage}`);
@@ -71,9 +75,28 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     watcher.onDidChange(async () => {
         try {
             if (logDataProvider && activeProvider) {
-                const newConnection = await createConnection();
-                await logDataProvider.updateConnection(newConnection);
-                outputChannel.appendLine('Updated connection and refreshed logs after org change');
+                // Only show spinner if the panel is visible
+                if (logDataProvider['isVisible']) {
+                    await vscode.window.withProgress({
+                        location: vscode.ProgressLocation.Notification,
+                        title: 'Switching org and retrieving logs',
+                        cancellable: false
+                    }, async (progress) => {
+                        progress.report({ message: 'Updating connection...' });
+                        const newConnection = await createConnection();
+                        await logDataProvider!.updateConnection(newConnection);
+                        progress.report({ message: 'Refreshing logs...' });
+                        await new Promise(res => setTimeout(res, 300));
+                    });
+                    outputChannel.appendLine('Updated connection and refreshed logs after org change');
+                    // Send orgChanged message to webview to close search bar
+                    activeProvider?.postMessage({ type: 'orgChanged' });
+                } else {
+                    // If not visible, just update connection and logs silently
+                    const newConnection = await createConnection();
+                    await logDataProvider!.updateConnection(newConnection);
+                    outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
+                }
             }
         } catch (error) {
             outputChannel.appendLine(`Error handling config file change: ${error}`);
@@ -113,7 +136,13 @@ class LogViewProvider implements vscode.WebviewViewProvider {
 
     public async refresh(): Promise<void> {
         if (this._logDataProvider) {
-            await this._logDataProvider.refreshLogs(false, true);
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Refreshing Salesforce logs...',
+                cancellable: false
+            }, async () => {
+                await this._logDataProvider!.refreshLogs(false, true);
+            });
         }
     }
 
@@ -121,6 +150,10 @@ class LogViewProvider implements vscode.WebviewViewProvider {
         if (this._view) {
             this._view.webview.postMessage(message);
         }
+    }
+
+    public showSearchBoxInWebview() {
+        this.postMessage({ type: 'showSearchBox' });
     }
 
     public updateView(data?: any[], isAutoRefresh: boolean = false) {
@@ -142,6 +175,14 @@ class LogViewProvider implements vscode.WebviewViewProvider {
 
         // Set initial visibility state
         this._logDataProvider?.setVisibility(webviewView.visible);
+
+        // Ensure auto-refresh starts if enabled and panel is visible
+        if (this._logDataProvider && this._logDataProvider.getAutoRefreshSetting() && webviewView.visible) {
+            // @ts-ignore: access private method for fix
+            this._logDataProvider.startAutoRefresh();
+            // Fetch logs immediately when panel becomes visible
+            this._logDataProvider.refreshLogs(true, false);
+        }
 
         // Handle visibility changes
         webviewView.onDidChangeVisibility(async () => {
@@ -175,6 +216,8 @@ class LogViewProvider implements vscode.WebviewViewProvider {
                 this.updateView(initialData, false);
             } else if (message.command === 'openLog') {
                 await openLog({ id: message.log.id });
+            } else if (message.command === 'inlineSearch') {
+                this._logDataProvider?.setSearchFilter(message.text);
             }
         });
     }

@@ -66,6 +66,9 @@ export async function deleteAllLogs() {
             
             if (!result.records || result.records.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
+                // Force refresh and update grid to empty
+                await provider.refreshLogs();
+                provider.notifyDataChange();
                 return;
             }
 
@@ -85,6 +88,20 @@ export async function deleteAllLogs() {
 
             vscode.window.showInformationMessage(`Successfully deleted ${totalLogs} logs.`);
             await provider.refreshLogs();
+            provider.notifyDataChange();
+            // Also clear the local downloaded logs cache to avoid VS Code showing new logs as deleted
+            await provider.logViewer.clearDownloadedLogs();
+            // Close all open editors for files in the .logs directory to avoid showing deleted files
+            const logsPath = provider.logViewer.logsPath;
+            if (logsPath) {
+                const openEditors = vscode.window.visibleTextEditors;
+                for (const editor of openEditors) {
+                    if (editor.document.uri.fsPath.startsWith(logsPath)) {
+                        await vscode.window.showTextDocument(editor.document, { preview: false });
+                        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+                    }
+                }
+            }
         } catch (error: any) {
             const errorMessage = error?.message || 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
@@ -185,17 +202,22 @@ export async function showOptions() {
 export async function showSearchBox() {
     try {
         const provider = await getLogDataProvider();
-        const currentFilter = provider.getSearchFilter();
-        
-        const searchText = await vscode.window.showInputBox({
-            placeHolder: 'Filter logs by operation or username...',
-            prompt: 'Enter text to filter logs',
-            value: currentFilter,
-            ignoreFocusOut: true
-        });
-        
-        if (searchText !== undefined) {
-            provider.setSearchFilter(searchText);
+        // Use the activeProvider from extension.ts if available
+        const activeProvider = (provider as any).activeProvider;
+        if (activeProvider && typeof activeProvider.showSearchBoxInWebview === 'function') {
+            activeProvider.showSearchBoxInWebview();
+        } else {
+            // fallback to old input box if webview not ready
+            const currentFilter = provider.getSearchFilter();
+            const searchText = await vscode.window.showInputBox({
+                placeHolder: 'Filter logs by operation or username...',
+                prompt: 'Enter text to filter logs',
+                value: currentFilter,
+                ignoreFocusOut: true
+            });
+            if (searchText !== undefined) {
+                provider.setSearchFilter(searchText);
+            }
         }
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
