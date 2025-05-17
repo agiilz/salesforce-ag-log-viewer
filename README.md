@@ -63,6 +63,12 @@ This extension contributes the following settings:
 
 ## Release Notes
 
+### 1.1.0
+* Added new search box for inline log filtering in the webview panel.
+* Improved trace flag management.
+* Enhanced error handling and user feedback.
+* UI/UX improvements and general bug fixes.
+
 ### 1.0.9
 
 Visual Indicator Improvements:
