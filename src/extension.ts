@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { LogDataProvider } from './logDataProvider';
-import { DeveloperLog } from './developerLog';
+import { ApexLog } from './ApexLogWrapper';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createConnection } from './connection';
@@ -269,8 +269,8 @@ async function openLog(data: { id: string }) {
             throw new Error(`Log with ID ${data.id} not found`);
         }
 
-        // Create a DeveloperLog instance with the retrieved data
-        const log = new DeveloperLog({
+        // Create an ApexLog instance with the retrieved data
+        const log = new ApexLog({
             Id: result.Id,
             LogUser: { Name: result.LogUser?.Name || 'Unknown' },
             Operation: result.Operation || '',

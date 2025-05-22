@@ -1,6 +1,7 @@
+//Classe wrapper para el objeto ApexLog de la API de Salesforce
 import { Connection } from 'jsforce';
 
-export interface DeveloperLogRecord {
+export interface ApexLogRecord {
     Id: string;
     Application: string;
     DurationMilliseconds: number;
@@ -15,7 +16,7 @@ export interface DeveloperLogRecord {
     Status: string;
 }
 
-export class DeveloperLog {
+export class ApexLog {
     public get id(): string { return this.entry.Id; }
     public get application(): string { return this.entry.Application; }
     public get startTime(): Date { return new Date(this.entry.StartTime); }
@@ -28,9 +29,12 @@ export class DeveloperLog {
     public get status(): string { return this.entry.Status; }
 
     constructor(
-        private readonly entry: DeveloperLogRecord,
+        private readonly entry: ApexLogRecord,
         private readonly connection: Connection
-    ) {}    public async getBody(): Promise<string> {
+    ) {}    
+    
+    //Obtener el log de la org en formato gzip (jsForce lo descomprime automaticamente a String)
+    public async getBody(): Promise<string> {
         const result = await this.connection.tooling.request({
             method: 'GET',
             url: `${this.connection.tooling._baseUrl()}/sobjects/ApexLog/${this.entry.Id}/Body`,

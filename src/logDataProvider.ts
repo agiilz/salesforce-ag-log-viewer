@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Connection } from 'jsforce';
-import { DeveloperLog, DeveloperLogRecord } from './developerLog';
-import { LogViewer } from './logViewer';
+import { ApexLog, ApexLogRecord } from './ApexLogWrapper';
+import { ApexLogFileManager } from './ApexLogFileManager';
 import { ensureTraceFlag } from './traceFlag';
 import { outputChannel } from './extension';
 
@@ -14,15 +14,15 @@ export class LogDataProvider implements vscode.Disposable {
     private readonly _onDidChangeData = new vscode.EventEmitter<LogDataChangeEvent>();
     readonly onDidChangeData = this._onDidChangeData.event;
 
-    private logs: DeveloperLog[] = [];
-    private filteredLogs: DeveloperLog[] = [];
+    private logs: ApexLog[] = [];
+    private filteredLogs: ApexLog[] = [];
     private searchText: string = '';
     private lastRefresh?: Date;
     private autoRefreshScheduledId?: NodeJS.Timeout;
     private autoRefreshPaused: boolean = true;
     private isRefreshing: boolean = false;
     private currentUserId?: string;
-    public readonly logViewer: LogViewer;
+    public readonly logViewer: ApexLogFileManager;
     private readonly context: vscode.ExtensionContext;
     private isVisible: boolean = false;
 
@@ -47,7 +47,7 @@ export class LogDataProvider implements vscode.Disposable {
         private readonly activeProvider?: any
     ) {
         this.context = context;
-        this.logViewer = new LogViewer(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
+        this.logViewer = new ApexLogFileManager(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
         this.logs = [];
         this.filteredLogs = [];
         this.autoRefreshPaused = !this.config.autoRefresh;
@@ -111,7 +111,7 @@ export class LogDataProvider implements vscode.Disposable {
 
             query += ' ORDER BY StartTime DESC LIMIT 100';
 
-            const result = await this.connection.tooling.query<DeveloperLogRecord>(query);
+            const result = await this.connection.tooling.query<ApexLogRecord>(query);
             this.lastRefresh = refreshDate;
 
             // Always clear logs and filteredLogs if no records
@@ -119,11 +119,11 @@ export class LogDataProvider implements vscode.Disposable {
                 this.logs = [];
                 this.filteredLogs = [];
             } else {
-                const newLogs = result.records.map(record => new DeveloperLog(record, this.connection));
+                const newLogs = result.records.map(record => new ApexLog(record, this.connection));
                 if (isInitialLoad) {
                     this.logs = newLogs;
                 } else {
-                    const uniqueLogEntries = new Map<string, DeveloperLog>();
+                    const uniqueLogEntries = new Map<string, ApexLog>();
                     newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
                     this.logs.forEach(log => {
                         if (!uniqueLogEntries.has(log.id)) {
