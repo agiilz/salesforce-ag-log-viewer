@@ -3,13 +3,13 @@ import { LogDataProvider } from './logDataProvider';
 import { ApexLog } from './ApexLogWrapper';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createConnection } from './connection';
+import { getConnection } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs } from './commands';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
-export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 let activeProvider: LogViewProvider | undefined;
+export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 
 export async function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
@@ -83,7 +83,7 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
                         cancellable: false
                     }, async (progress) => {
                         progress.report({ message: 'Updating connection...' });
-                        const newConnection = await createConnection();
+                        const newConnection = await getConnection();
                         await logDataProvider!.updateConnection(newConnection);
                         progress.report({ message: 'Refreshing logs...' });
                         await new Promise(res => setTimeout(res, 300));
@@ -93,7 +93,7 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
                     activeProvider?.postMessage({ type: 'orgChanged' });
                 } else {
                     // If not visible, just update connection and logs silently
-                    const newConnection = await createConnection();
+                    const newConnection = await getConnection();
                     await logDataProvider!.updateConnection(newConnection);
                     outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
                 }
@@ -202,10 +202,10 @@ class LogViewProvider implements vscode.WebviewViewProvider {
 
         // Create URIs for the external files
         const scriptUri = webviewView.webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'src', 'templates', 'logViewer.js')
+            vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.js')
         );
         const styleUri = webviewView.webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'src', 'templates', 'logViewer.css')
+            vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.css')
         );
 
         webviewView.webview.html = this._getHtmlForWebview(scriptUri, styleUri);
@@ -223,7 +223,7 @@ class LogViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
-        const templatePath = path.join(this._extensionUri.fsPath, 'src', 'templates', 'logViewer.html');
+        const templatePath = path.join(this._extensionUri.fsPath, 'src', 'ApexLogPanel', 'ApexLogPanel.html');
         let template = fs.readFileSync(templatePath, 'utf8');
 
         // Replace template variables with actual URIs
@@ -244,7 +244,7 @@ export function deactivate() {
 export async function getLogDataProvider(): Promise<LogDataProvider> {
     if (!logDataProvider) {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-        const connection = await createConnection();
+        const connection = await getConnection();
         
         logDataProvider = await LogDataProvider.create(
             extensionContext,
@@ -283,7 +283,7 @@ async function openLog(data: { id: string }) {
             Request: result.Request || ''
         }, provider.connection);
 
-        await provider.logViewer.showLog(log);
+        await provider.logFileManager.showLog(log);
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to open log: ${errorMessage}`);

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getLogDataProvider } from './extension';
 
+//Metodo para cambiar la visibilidad de los logs que se muestran en el panel
 export async function setLogVisibility() {
     const provider = await getLogDataProvider();
     const currentSetting = provider.getCurrentUserOnlySetting();
@@ -40,6 +41,7 @@ export async function setLogVisibility() {
     }
 }
 
+//Metodo para borrar todos los logs de Apex de la org de Salesforce
 export async function deleteAllLogs() {
     const confirmation = await vscode.window.showWarningMessage(
         'Are you sure you want to delete ALL Apex logs from your Salesforce org? This action cannot be undone.',
@@ -67,7 +69,7 @@ export async function deleteAllLogs() {
             if (!result.records || result.records.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
                 // Force refresh and update grid to empty
-                await provider.refreshLogs();
+                //await provider.refreshLogs();
                 provider.notifyDataChange();
                 return;
             }
@@ -77,6 +79,7 @@ export async function deleteAllLogs() {
             progress.report({ message: `Found ${totalLogs} logs. Deleting...` });
 
             const chunkSize = 200;
+            //TO DO:   Promise.allSettled for parallel delete if API allows
             for (let i = 0; i < logIds.length; i += chunkSize) {
                 const chunk = logIds.slice(i, i + chunkSize);
                 progress.report({ 
@@ -89,19 +92,25 @@ export async function deleteAllLogs() {
             vscode.window.showInformationMessage(`Successfully deleted ${totalLogs} logs.`);
             await provider.refreshLogs();
             provider.notifyDataChange();
+            
+            /* TODO: Uncomment if you want to clear the local downloaded logs cache
+
             // Also clear the local downloaded logs cache to avoid VS Code showing new logs as deleted
-            await provider.logViewer.clearDownloadedLogs();
+            await provider.logViewer.clearDownloadedLogs(); 
+
+
             // Close all open editors for files in the .logs directory to avoid showing deleted files
             const logsPath = provider.logViewer.logsPath;
             if (logsPath) {
                 const openEditors = vscode.window.visibleTextEditors;
                 for (const editor of openEditors) {
                     if (editor.document.uri.fsPath.startsWith(logsPath)) {
-                        await vscode.window.showTextDocument(editor.document, { preview: false });
+                        //await vscode.window.showTextDocument(editor.document, { preview: false });
                         await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
                     }
                 }
-            }
+            }*/
+
         } catch (error: any) {
             const errorMessage = error?.message || 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
@@ -109,6 +118,7 @@ export async function deleteAllLogs() {
     });
 }
 
+//Metodo para activar el autorefresco de logs en el panel
 export async function toggleAutoRefresh() {
     const provider = await getLogDataProvider();
     const currentSetting = provider.getAutoRefreshSetting();
@@ -148,6 +158,7 @@ export async function toggleAutoRefresh() {
     }
 }
 
+//Metodo para mostrar el menu de configuracion generales
 export async function showOptions() {
     const provider = await getLogDataProvider();
     const currentAutoRefresh = provider.getAutoRefreshSetting();
@@ -175,49 +186,44 @@ export async function showOptions() {
         return;
     }
 
+    //Ir a la opcion seleccionada del menu
     switch (selection.label) {
         case "Auto-refresh":
             await toggleAutoRefresh();
             break;
         case "Refresh Interval":
-            const interval = await vscode.window.showInputBox({
-                prompt: "Enter refresh interval in milliseconds",
-                value: config.get('refreshInterval')?.toString(),
-                validateInput: (value) => {
-                    const num = parseInt(value);
-                    if (isNaN(num) || num < 1000) {
-                        return "Please enter a valid number greater than 1000";
-                    }
-                    return null;
-                }
-            });
-            if (interval) {
-                await config.update('refreshInterval', parseInt(interval), vscode.ConfigurationTarget.Global);
-                vscode.window.showInformationMessage(`Refresh interval set to ${interval}ms`);
-            }
+            await setRefreshInterval(config);
             break;
     }
 }
 
+//Metodo para setear el intervalo de refresco de logs
+async function setRefreshInterval(config: vscode.WorkspaceConfiguration) {
+    const interval = await vscode.window.showInputBox({
+        prompt: "Enter refresh interval in milliseconds",
+        value: config.get('refreshInterval')?.toString(),
+        validateInput: (value) => {
+            const num = parseInt(value);
+            if (isNaN(num) || num < 1000) {
+                return "Please enter a valid number greater than 1000";
+            }
+            return null;
+        }
+    });
+    if (interval) {
+        await config.update('refreshInterval', parseInt(interval), vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Refresh interval set to ${interval}ms`);
+    }
+}
+
+//Metodo para mostrar el buscador de logs
 export async function showSearchBox() {
     try {
         const provider = await getLogDataProvider();
-        // Use the activeProvider from extension.ts if available
+        //Usar el buscador del panel
         const activeProvider = (provider as any).activeProvider;
         if (activeProvider && typeof activeProvider.showSearchBoxInWebview === 'function') {
             activeProvider.showSearchBoxInWebview();
-        } else {
-            // fallback to old input box if webview not ready
-            const currentFilter = provider.getSearchFilter();
-            const searchText = await vscode.window.showInputBox({
-                placeHolder: 'Filter logs by operation or username...',
-                prompt: 'Enter text to filter logs',
-                value: currentFilter,
-                ignoreFocusOut: true
-            });
-            if (searchText !== undefined) {
-                provider.setSearchFilter(searchText);
-            }
         }
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
@@ -225,6 +231,7 @@ export async function showSearchBox() {
     }
 }
 
+//Metodo para limpiar el filtro de busqueda de logs
 export async function clearSearch() {
     try {
         const provider = await getLogDataProvider();
@@ -236,6 +243,7 @@ export async function clearSearch() {
     }
 }
 
+//Metodo para limpiar los logs descargados localmente
 export async function clearDownloadedLogs() {
     const confirmation = await vscode.window.showWarningMessage(
         'Are you sure you want to clear all downloaded log files? This action cannot be undone.',
@@ -250,7 +258,7 @@ export async function clearDownloadedLogs() {
 
     try {
         const provider = await getLogDataProvider();
-        await provider.logViewer.clearDownloadedLogs();
+        await provider.logFileManager.clearDownloadedLogs();
         vscode.window.showInformationMessage('Downloaded logs cleared successfully.');
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';

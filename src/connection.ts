@@ -3,86 +3,90 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
+import { outputChannel } from './extension';
 
 let currentOrgUsername: string | undefined;
-const outputChannel = vscode.window.createOutputChannel('Salesforce Connection');
+let currentConnection: Connection | undefined;
 
-export async function createConnection(): Promise<Connection> {
-    try {
-        const newOrgUsername = await getCurrentOrgFromConfig();
-        if (!newOrgUsername) {
-            throw new Error('No target org found in .sf/config.json');
-        }
-
-        // Check if org has changed
-        if (currentOrgUsername !== undefined && currentOrgUsername !== newOrgUsername) {
-            outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
-        }
-        currentOrgUsername = newOrgUsername;
-
-        // Get org details using the target org
-        const { stdout: orgDetailsOutputSF } = await executeCommand(`sf org display --json -o ${newOrgUsername}`);
-        const orgDetails = JSON.parse(orgDetailsOutputSF);
-        
-        if (!orgDetails.result) {
-            throw new Error(`Failed to get org details for ${newOrgUsername}`);
-        }
-
-        return new Connection({
-            instanceUrl: orgDetails.result.instanceUrl,
-            accessToken: orgDetails.result.accessToken
-        });
-    } catch (error: any) {
-        const errorMessage = error?.message || 'Unknown error occurred';
-        vscode.window.showErrorMessage(`Failed to connect to Salesforce: ${errorMessage}`);
-        throw error;
+//Obtenemos la conexion a la org de Salesforce
+export async function getConnection(): Promise<Connection> {
+    const newOrgUsername = await getCurrentOrgFromConfig();
+    if (!newOrgUsername) {
+        throw new Error('No target org found in .sf/config.json');
     }
+
+    //Si la org ha cambiado, crea una nueva conexion
+    if (!currentConnection || currentOrgUsername !== newOrgUsername) {
+        try{
+            await createConnection(newOrgUsername);
+        }catch (error: any) {
+            const errorMessage = error?.message || 'Unknown error occurred';
+            vscode.window.showErrorMessage(`Failed to connect to Salesforce: ${errorMessage}`);
+            throw error;
+        }
+        
+    }
+
+    return currentConnection!;
 }
 
-export async function getCurrentOrgFromConfig(): Promise<string | undefined> {
-    try {
-        // First try workspace root
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-        if (workspaceRoot) {
-            const sfConfigPath = path.join(workspaceRoot, '.sf', 'config.json');
-            try {
-                const configContent = await fs.promises.readFile(sfConfigPath, 'utf8');
-                const config = JSON.parse(configContent);
-                if (config['target-org']) {
-                    outputChannel.appendLine(`Found target org in workspace config: ${config['target-org']}`);
-                    return config['target-org'];
-                }
-            } catch (error) {
-                outputChannel.appendLine('No config found in workspace, checking user home directory');
-            }
-        }
+//Metodo para crear una nueva conexion a la org de Salesforce
+async function createConnection(newOrgUsername: string): Promise<void> {
+    
+    outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
+    currentOrgUsername = newOrgUsername;
 
-        // Try user's home directory
-        const homeDir = process.env.USERPROFILE ?? process.env.HOME;
-        if (!homeDir) {
-            outputChannel.appendLine('Could not find home directory');
-            return undefined;
-        }
+    // Get org details using the target org
+    const { stdout: orgDetailsOutputSF } = await executeCommand(`sf org display --json -o "${newOrgUsername}"`);
+    const orgDetails = JSON.parse(orgDetailsOutputSF);
 
-        const sfConfigPath = path.join(homeDir, '.sf', 'config.json');
-        try {
-            const configContent = await fs.promises.readFile(sfConfigPath, 'utf8');
-            const config = JSON.parse(configContent);
-            if (config['target-org']) {
-                outputChannel.appendLine(`Found target org in user config: ${config['target-org']}`);
-                return config['target-org'];
-            } else {
-                outputChannel.appendLine('No target-org found in config file');
-                return undefined;
-            }
-        } catch (error) {
-            outputChannel.appendLine(`Error reading .sf/config.json: ${error}`);
-            return undefined;
-        }
-    } catch (error) {
-        outputChannel.appendLine(`Error getting current org from config: ${error}`);
-        return undefined;
+    if (!orgDetails.result) {
+        throw new Error(`Failed to get org details for ${newOrgUsername}`);
     }
+
+    currentConnection = new Connection({
+        instanceUrl: orgDetails.result.instanceUrl,
+        accessToken: orgDetails.result.accessToken
+    });
+}
+
+//Metodo para obtener la org actual desde el fichero de configuracion .sf/config.json
+export async function getCurrentOrgFromConfig(): Promise<string | undefined> {
+   
+    //Obtener la configuracion del workspace actual (proyecto)
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (workspaceRoot) {
+        const org = await readTargetOrg(path.join(workspaceRoot, '.sf', 'config.json'), 'workspace');
+        if (org) return org;
+    }
+
+    //Obtener la configuracion del usuario (global)
+    //Busca en la carpeta de usuario .sf/config.json
+    const homeDir = process.env.USERPROFILE ?? process.env.HOME;
+    if (homeDir) {
+        const org = await readTargetOrg(path.join(homeDir, '.sf', 'config.json'), 'user');
+        if (org) return org;
+    } else {
+        outputChannel.appendLine('Could not find home directory');
+    }
+
+    outputChannel.appendLine('No target-org found in any config file. Checked workspace and user folder.');
+    return undefined;
+}
+
+//Metodo para leer la org desde el fichero de configuracion
+async function readTargetOrg(configPath: string, location: string): Promise<string | undefined> {
+    try {
+        const configContent = await fs.promises.readFile(configPath, 'utf8');
+        const config = JSON.parse(configContent);
+        if (config['target-org']) {
+            outputChannel.appendLine(`Found target org in ${location} config: ${config['target-org']}`);
+            return config['target-org'];
+        }
+    } catch {
+        outputChannel.appendLine(`Target org not found in ${location} config`);
+    }
+    return undefined;
 }
 
 function executeCommand(command: string): Promise<{ stdout: string, stderr: string }> {

@@ -22,7 +22,7 @@ export class LogDataProvider implements vscode.Disposable {
     private autoRefreshPaused: boolean = true;
     private isRefreshing: boolean = false;
     private currentUserId?: string;
-    public readonly logViewer: ApexLogFileManager;
+    public readonly logFileManager: ApexLogFileManager;
     private readonly context: vscode.ExtensionContext;
     private isVisible: boolean = false;
 
@@ -47,7 +47,7 @@ export class LogDataProvider implements vscode.Disposable {
         private readonly activeProvider?: any
     ) {
         this.context = context;
-        this.logViewer = new ApexLogFileManager(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
+        this.logFileManager = new ApexLogFileManager(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
         this.logs = [];
         this.filteredLogs = [];
         this.autoRefreshPaused = !this.config.autoRefresh;

@@ -5,9 +5,9 @@ node_modules
 src
 !src/images/agLogViewer_logo.png
 !src/images/agxLabs_logo.png
-!src/templates/logViewer.html
-!src/templates/logViewer.css
-!src/templates/logViewer.js
+!src/ApexLogPanel/ApexLogPanel.html
+!src/ApexLogPanel/ApexLogPanel.css
+!src/ApexLogPanel/ApexLogPanel.js
 
 # Exclude VS Code and git config
 .vscode

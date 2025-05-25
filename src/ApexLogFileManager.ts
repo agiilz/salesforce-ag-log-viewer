@@ -114,6 +114,20 @@ export class ApexLogFileManager {
     public async clearDownloadedLogs(): Promise<void> {
         if (this.logsPath && await fs.pathExists(this.logsPath)) {
             await fs.emptyDir(this.logsPath);
+            
+            //Cerrar todas las tabs que coincidan con los logs locales borrados
+            //TO DO: meter que sea una setting opcional
+            for (const group of vscode.window.tabGroups.all) {
+                for (const tab of group.tabs) {
+                    if (
+                        tab.input && typeof tab.input === 'object' && tab.input !== null && 'uri' in tab.input &&
+                        (tab.input as any).uri.fsPath.startsWith(this.logsPath)
+                    ){
+                        await vscode.window.tabGroups.close(tab);
+                    }
+                }
+            }
+
         }
     }
 }
