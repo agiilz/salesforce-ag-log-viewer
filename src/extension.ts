@@ -134,6 +134,7 @@ class LogViewProvider implements vscode.WebviewViewProvider {
         private readonly _extensionUri: vscode.Uri
     ) {}
 
+    //Metodo del panel que llama a refrescar los logs
     public async refresh(): Promise<void> {
         if (this._logDataProvider) {
             await vscode.window.withProgress({
@@ -173,21 +174,23 @@ class LogViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         this._logDataProvider = logDataProvider;
 
-        // Set initial visibility state
-        this._logDataProvider?.setVisibility(webviewView.visible);
+        //Setear la visibilidad del panel en el data provider
+        this._logDataProvider?.setPanelVisibility(webviewView.visible);
 
         // Ensure auto-refresh starts if enabled and panel is visible
         if (this._logDataProvider && this._logDataProvider.getAutoRefreshSetting() && webviewView.visible) {
-            // @ts-ignore: access private method for fix
-            this._logDataProvider.startAutoRefresh();
+          
+            //this._logDataProvider.startAutoRefresh();
+
             // Fetch logs immediately when panel becomes visible
             this._logDataProvider.refreshLogs(true, false);
         }
 
-        // Handle visibility changes
+        //Cuando se cambia el estado de visilidad del panel
+        //Si es visible fuerza a un refresco de los logs
         webviewView.onDidChangeVisibility(async () => {
-            this._logDataProvider?.setVisibility(webviewView.visible);
-            // If becoming visible, just refresh the logs
+            this._logDataProvider?.setPanelVisibility(webviewView.visible);
+          
             if (webviewView.visible) {
                 await this.refresh();
             }
@@ -208,21 +211,26 @@ class LogViewProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.css')
         );
 
-        webviewView.webview.html = this._getHtmlForWebview(scriptUri, styleUri);
+        webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);
 
+        //listener que permite recibir mensajes enviados desde ApexLogPanel.js
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'ready') {
+                //Cuando el panel se ha cargado y esta listo para mostrar datos
                 const initialData = this._logDataProvider?.getGridData();
                 this.updateView(initialData, false);
             } else if (message.command === 'openLog') {
+                //Cuando se recibe el mensaje de abrir un log
                 await openLog({ id: message.log.id });
             } else if (message.command === 'inlineSearch') {
+                //Cuando el usuario escribe en el input de busqueda
                 this._logDataProvider?.setSearchFilter(message.text);
             }
         });
     }
 
-    private _getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
+    //Metodo que obtiene el HTML para rellenar el webview (ApexLogPanel.html) + js + css
+    private getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
         const templatePath = path.join(this._extensionUri.fsPath, 'src', 'ApexLogPanel', 'ApexLogPanel.html');
         let template = fs.readFileSync(templatePath, 'utf8');
 

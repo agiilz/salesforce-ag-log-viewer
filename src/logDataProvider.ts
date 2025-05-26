@@ -17,7 +17,6 @@ export class LogDataProvider implements vscode.Disposable {
     private logs: ApexLog[] = [];
     private filteredLogs: ApexLog[] = [];
     private searchText: string = '';
-    private lastRefresh?: Date;
     private autoRefreshScheduledId?: NodeJS.Timeout;
     private autoRefreshPaused: boolean = true;
     private isRefreshing: boolean = false;
@@ -94,57 +93,38 @@ export class LogDataProvider implements vscode.Disposable {
         const gridData = this.getGridData();
         this._onDidChangeData.fire({ data: gridData, isAutoRefresh });
     }
-
+    
+    //Metodo para refrescar los ApexLogs de la org de Salesforce
     public async refreshLogs(isInitialLoad: boolean = false, isAutoRefresh: boolean = false): Promise<void> {
         if (this.isRefreshing) {
             return;
         }
         this.isRefreshing = true;
         outputChannel.appendLine('Refreshing logs...');
+        
+        //Contruccion de la query para obtener los ApexLogs
+        // Si currentUserOnly está activado, se filtra por el ID del usuario actual
+        let query = 'SELECT Id, Application, DurationMilliseconds, LogLength, LogUser.Name, Operation, Request, StartTime, Status FROM ApexLog';
+        if (this.config.currentUserOnly && this.currentUserId) {
+            query += ` WHERE LogUserId = '${this.currentUserId}'`;
+        }
+        query += ' ORDER BY StartTime DESC LIMIT 100'; //TO DO: Cambiar el limite de logs a mostrar segun setting
+
         try {
-            const refreshDate = new Date();
-            let query = 'SELECT Id, Application, DurationMilliseconds, LogLength, LogUser.Name, Operation, Request, StartTime, Status FROM ApexLog';
-
-            if (this.config.currentUserOnly && this.currentUserId) {
-                query += ` WHERE LogUserId = '${this.currentUserId}'`;
-            }
-
-            query += ' ORDER BY StartTime DESC LIMIT 100';
-
             const result = await this.connection.tooling.query<ApexLogRecord>(query);
-            this.lastRefresh = refreshDate;
 
-            // Always clear logs and filteredLogs if no records
             if (!result.records || result.records.length === 0) {
+                //Si no hay registros en la org, se limpia el array de logs para mostrarlo vacio al usuario
                 this.logs = [];
                 this.filteredLogs = [];
             } else {
-                const newLogs = result.records.map(record => new ApexLog(record, this.connection));
-                if (isInitialLoad) {
-                    this.logs = newLogs;
-                } else {
-                    const uniqueLogEntries = new Map<string, ApexLog>();
-                    newLogs.forEach(log => uniqueLogEntries.set(log.id, log));
-                    this.logs.forEach(log => {
-                        if (!uniqueLogEntries.has(log.id)) {
-                            uniqueLogEntries.set(log.id, log);
-                        }
-                    });
-                    this.logs = Array.from(uniqueLogEntries.values());
-                }
-                this.logs = this.logs
-                    .filter(log => log.operation !== '<empty>')
-                    .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
-                    .slice(0, 100);
-                if (isInitialLoad) {
-                    this.searchText = '';
-                    this.filteredLogs = [...this.logs];
-                } else {
-                    this._filterLogs();
-                }
+                //Procesa los logs obtenidos de la org
+                this.processLogs(result, isInitialLoad);
             }
 
+            //Notifica los nuevos logs al panel
             this._notifyDataChange(isAutoRefresh);
+
         } catch (error: any) {
             outputChannel.appendLine(`Log refresh error: ${error}`);
             vscode.window.showErrorMessage(`Failed to refresh logs: ${error.message}`);
@@ -157,17 +137,39 @@ export class LogDataProvider implements vscode.Disposable {
         }
     }
 
-    public setVisibility(visible: boolean) {
+    //Metodo para procesar los logs obtenidos de la org de Salesforce
+    private processLogs(result: { records: ApexLogRecord[] }, isInitialLoad: boolean) {
+        //Convierte los registros obtenidos en instancias de ApexLog
+        const newLogs = result.records.map(record => new ApexLog(record, this.connection));
+        
+        this.logs = newLogs
+            .filter(log => log.operation !== '<empty>') //TO DO: Filtrar logs con operación vacía o no segun setting
+            .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+
+        if (isInitialLoad) {
+            this.searchText = '';
+            this.filteredLogs = [...this.logs];
+        } else {
+            //Si no es la primera carga mira si tiene que filtrar los logs en caso de que haya un filtro activo
+            this._filterLogs();
+            //TODO: que no filtre cuando cambio de tab, que se reinicie el filtro?
+        }
+    }
+
+
+    //Metodo para saber si el panel esta visible al usuario y tiene que seguir autorefrescando los logs
+    public setPanelVisibility(visible: boolean) {
         this.isVisible = visible;
         if (visible && this.config.autoRefresh && this.autoRefreshPaused) {
-            // Resume auto-refresh if it was enabled in config
-                this.startAutoRefresh();
+            //Si el panel se vuelve visible, esta configurado el autorefresh y el auto-refresh está pausado, reinicia el auto-refresh
+            this.startAutoRefresh();
         } else if (!visible && !this.autoRefreshPaused) {
-            // Pause auto-refresh when panel becomes hidden
+            //Pausar el auto-refresh si el panel no está visible
             this.stopAutoRefresh();
         }
     }
 
+    //Metodo para iniciar el autorefresh de logs
     private startAutoRefresh() {
         // Only start if panel is visible
         if (this.isVisible) {
@@ -176,6 +178,7 @@ export class LogDataProvider implements vscode.Disposable {
         }
     }
 
+    //Metodo para parar el autorefresh de logs
     private stopAutoRefresh() {
         this.autoRefreshPaused = true;
         if (this.autoRefreshScheduledId) {

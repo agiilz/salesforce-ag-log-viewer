@@ -309,37 +309,6 @@
         saveState();
     }
 
-    function updateRowContent(rowDiv, data) {
-        rowDiv.querySelectorAll('.grid-cell').forEach(cell => {
-            const field = cell.dataset.field;
-            if (field && data[field] !== cell.textContent) {
-                cell.textContent = data[field];
-                
-                if (cell.dataset.truncated) {
-                    const width = parseInt(cell.style.width);
-                    const tempSpan = document.createElement('span');
-                    tempSpan.style.visibility = 'hidden';
-                    tempSpan.style.position = 'absolute';
-                    tempSpan.style.whiteSpace = 'nowrap';
-                    tempSpan.textContent = data[field];
-                    document.body.appendChild(tempSpan);
-                    
-                    const contentWidth = tempSpan.offsetWidth;
-                    document.body.removeChild(tempSpan);
-                    
-                    const availableWidth = width - 12;
-                    if (contentWidth > availableWidth) {
-                        cell.dataset.truncated = 'true';
-                        cell.title = data[field];
-                    } else {
-                        delete cell.dataset.truncated;
-                        cell.removeAttribute('title');
-                    }
-                }
-            }
-        });
-    }
-
     function createRow(rowData, previousState = null) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'grid-row';
