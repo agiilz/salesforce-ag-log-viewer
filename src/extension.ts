@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
 import { LogDataProvider } from './logDataProvider';
 import { ApexLog } from './ApexLogWrapper';
-import * as fs from 'fs';
 import * as path from 'path';
 import { getConnection } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs } from './commands';
+import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
-let activeProvider: LogViewProvider | undefined;
+let activeProvider: ApexLogPanelProvider | undefined;
 export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -16,38 +16,38 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(outputChannel);
     outputChannel.show(true); // Make output visible
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
-
+    
     try {
-        // Create and register the webview provider first
-        const provider = new LogViewProvider(context.extensionUri);
+        //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
+        setupConfigFileWatchers(context);
+
+        // Use getLogDataProvider to ensure provider is initialized
+        const provider = new ApexLogPanelProvider(context.extensionUri, await getLogDataProvider());
         activeProvider = provider;
+        (logDataProvider as any).activeProvider = provider;
+        
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('salesforceLogsView', provider)
         );
 
-        // Set up config file watchers
-        setupConfigFileWatchers(context);
-
-        // Create and initialize the log provider with the webview provider
-        await getLogDataProvider(); // Only create, do not refresh logs yet
-        outputChannel.appendLine('Log provider initialized');
-
-        // Register commands
+        //Registrar los comandos de la extension
         registerCommands(context, provider);
-
-        // Subscribe to data changes
-        logDataProvider?.onDidChangeData(({ data, isAutoRefresh }) => {
+        
+        //Suscribirse a eventos de cambio de datos del LogDataProvider
+        (await getLogDataProvider()).onDidChangeData(({ data, isAutoRefresh }) => {
             provider.updateView(data, isAutoRefresh);
         });
 
         outputChannel.appendLine('Extension activation complete');
 
-        // After showing output, always focus the Salesforce Log Viewer panel webview
+        //TODO: Hacer que no se enfoque el output si no se quiere
+        //Despues de mostrar el output, enfocar el panel de logs
         setTimeout(() => {
             vscode.commands.executeCommand('salesforceLogsView.focus');
-        }, 500); // Small delay to ensure output is shown first
+        }, 500); //Delay antes de cerrar el output panel
+
     } catch (error: any) {
-        const errorMessage = error?.message || 'Unknown error occurred';
+        const errorMessage = error?.message ?? 'Unknown error occurred';
         outputChannel.appendLine(`Activation error: ${errorMessage}`);
         console.error('Activation error:', error);
         vscode.window.showErrorMessage(`Failed to initialize Salesforce Log Viewer: ${errorMessage}`);
@@ -70,32 +70,34 @@ function setupConfigFileWatchers(context: vscode.ExtensionContext) {
     }
 }
 
+//Metodo para crear un watcher de cambios en el fichero de configuracion .sf/config.json
 function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(configPath);
+    
     watcher.onDidChange(async () => {
         try {
             if (logDataProvider && activeProvider) {
-                // Only show spinner if the panel is visible
+                //Mostrar notificacion de cambio de org si el panel esta visible
                 if (logDataProvider['isVisible']) {
                     await vscode.window.withProgress({
                         location: vscode.ProgressLocation.Notification,
                         title: 'Switching org and retrieving logs',
                         cancellable: false
-                    }, async (progress) => {
-                        progress.report({ message: 'Updating connection...' });
+                    }, async (progress) => {                        progress.report({ message: 'Updating connection...' });
                         const newConnection = await getConnection();
-                        await logDataProvider!.updateConnection(newConnection);
+                        await (logDataProvider as any).updateConnection(newConnection);
                         progress.report({ message: 'Refreshing logs...' });
                         await new Promise(res => setTimeout(res, 300));
                     });
                     outputChannel.appendLine('Updated connection and refreshed logs after org change');
                     // Send orgChanged message to webview to close search bar
-                    activeProvider?.postMessage({ type: 'orgChanged' });
-                } else {
+                    activeProvider.postMessage({ type: 'orgChanged' });
+                } else {                    
                     // If not visible, just update connection and logs silently
                     const newConnection = await getConnection();
-                    await logDataProvider!.updateConnection(newConnection);
+                    await (logDataProvider as any).updateConnection(newConnection);
                     outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
+                    
                 }
             }
         } catch (error) {
@@ -105,7 +107,8 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     return watcher;
 }
 
-function registerCommands(context: vscode.ExtensionContext, provider: LogViewProvider) {
+// Este metodo registra los comandos de la extension y los asocia a sus handlers
+function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPanelProvider) {
     type CommandHandler = (...args: any[]) => any;
     const commands: [string, CommandHandler][] = [
         ['salesforce-ag-log-viewer.refreshLogs', async () => await provider.refresh()],
@@ -126,134 +129,20 @@ function registerCommands(context: vscode.ExtensionContext, provider: LogViewPro
     context.subscriptions.push(...disposables);
 }
 
-class LogViewProvider implements vscode.WebviewViewProvider {
-    private _view?: vscode.WebviewView;
-    private _logDataProvider?: LogDataProvider;
-
-    constructor(
-        private readonly _extensionUri: vscode.Uri
-    ) {}
-
-    //Metodo del panel que llama a refrescar los logs
-    public async refresh(): Promise<void> {
-        if (this._logDataProvider) {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Refreshing Salesforce logs...',
-                cancellable: false
-            }, async () => {
-                await this._logDataProvider!.refreshLogs(false, true);
-            });
-        }
-    }
-
-    public postMessage(message: any) {
-        if (this._view) {
-            this._view.webview.postMessage(message);
-        }
-    }
-
-    public showSearchBoxInWebview() {
-        this.postMessage({ type: 'showSearchBox' });
-    }
-
-    public updateView(data?: any[], isAutoRefresh: boolean = false) {
-        const gridData = data || this._logDataProvider?.getGridData();
-        this.postMessage({ 
-            type: 'updateData',
-            data: gridData,
-            isAutoRefresh: isAutoRefresh
-        });
-    }
-
-    public resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
-    ) {
-        this._view = webviewView;
-        this._logDataProvider = logDataProvider;
-
-        //Setear la visibilidad del panel en el data provider
-        this._logDataProvider?.setPanelVisibility(webviewView.visible);
-
-        // Ensure auto-refresh starts if enabled and panel is visible
-        if (this._logDataProvider && this._logDataProvider.getAutoRefreshSetting() && webviewView.visible) {
-          
-            //this._logDataProvider.startAutoRefresh();
-
-            // Fetch logs immediately when panel becomes visible
-            this._logDataProvider.refreshLogs(true, false);
-        }
-
-        //Cuando se cambia el estado de visilidad del panel
-        //Si es visible fuerza a un refresco de los logs
-        webviewView.onDidChangeVisibility(async () => {
-            this._logDataProvider?.setPanelVisibility(webviewView.visible);
-          
-            if (webviewView.visible) {
-                await this.refresh();
-            }
-        });
-
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [
-                this._extensionUri
-            ]
-        };
-
-        // Create URIs for the external files
-        const scriptUri = webviewView.webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.js')
-        );
-        const styleUri = webviewView.webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.css')
-        );
-
-        webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);
-
-        //listener que permite recibir mensajes enviados desde ApexLogPanel.js
-        webviewView.webview.onDidReceiveMessage(async (message) => {
-            if (message.command === 'ready') {
-                //Cuando el panel se ha cargado y esta listo para mostrar datos
-                const initialData = this._logDataProvider?.getGridData();
-                this.updateView(initialData, false);
-            } else if (message.command === 'openLog') {
-                //Cuando se recibe el mensaje de abrir un log
-                await openLog({ id: message.log.id });
-            } else if (message.command === 'inlineSearch') {
-                //Cuando el usuario escribe en el input de busqueda
-                this._logDataProvider?.setSearchFilter(message.text);
-            }
-        });
-    }
-
-    //Metodo que obtiene el HTML para rellenar el webview (ApexLogPanel.html) + js + css
-    private getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
-        const templatePath = path.join(this._extensionUri.fsPath, 'src', 'ApexLogPanel', 'ApexLogPanel.html');
-        let template = fs.readFileSync(templatePath, 'utf8');
-
-        // Replace template variables with actual URIs
-        template = template.replace('${scriptUri}', scriptUri.toString());
-        template = template.replace('${styleUri}', styleUri.toString());
-
-        return template;
-    }
-}
-
+//Metodo que se llama cuando la extension se desactiva (standard)
 export function deactivate() {
     if (logDataProvider) {
-        logDataProvider.dispose();
+        (logDataProvider as any).dispose();
         logDataProvider = undefined;
     }
 }
 
+//Obtener el provider de la extension con la configuracion y conexion actual
 export async function getLogDataProvider(): Promise<LogDataProvider> {
     if (!logDataProvider) {
+        // Create and initialize the log provider if it doesn't exist
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         const connection = await getConnection();
-        
         logDataProvider = await LogDataProvider.create(
             extensionContext,
             connection,
@@ -261,14 +150,15 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
                 autoRefresh: config.get('autoRefresh') ?? true,
                 refreshInterval: config.get('refreshInterval') ?? 5000,
                 currentUserOnly: config.get('currentUserOnly') ?? true
-            },
-            activeProvider
+            }
         );
+        outputChannel.appendLine('Log provider initialized (lazy)');
     }
     return logDataProvider;
 }
 
-async function openLog(data: { id: string }) {
+//Metodo que abre un log especifico por su ID una vez el usuario ha dado click en el log
+export async function openLog(data: { id: string }) {
     try {
         const provider = await getLogDataProvider();
         // Query the full log details with type assertion
@@ -280,20 +170,23 @@ async function openLog(data: { id: string }) {
         // Create an ApexLog instance with the retrieved data
         const log = new ApexLog({
             Id: result.Id,
-            LogUser: { Name: result.LogUser?.Name || 'Unknown' },
-            Operation: result.Operation || '',
-            StartTime: result.StartTime || new Date().toISOString(),
-            Status: result.Status || '',
-            LogLength: result.LogLength || 0,
-            DurationMilliseconds: result.DurationMilliseconds || 0,
-            Application: result.Application || '',
-            Location: result.Location || '',
-            Request: result.Request || ''
+            LogUser: { Name: result.LogUser?.Name ?? 'Unknown' },
+            Operation: result.Operation ?? '',
+            StartTime: result.StartTime ?? new Date().toISOString(),
+            Status: result.Status ?? '',
+            LogLength: result.LogLength ?? 0,
+            DurationMilliseconds: result.DurationMilliseconds ?? 0,
+            Application: result.Application ?? '',
+            Location: result.Location ?? '',
+            Request: result.Request ?? ''
         }, provider.connection);
 
         await provider.logFileManager.showLog(log);
+
+        // Mark the log as opened (set status to 'downloaded' and refresh UI)
+        logDataProvider?.markLogAsOpened(log.id);
     } catch (error: any) {
-        const errorMessage = error?.message || 'Unknown error occurred';
+        const errorMessage = error?.message ?? 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to open log: ${errorMessage}`);
     }
 }

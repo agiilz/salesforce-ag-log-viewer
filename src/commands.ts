@@ -79,7 +79,7 @@ export async function deleteAllLogs() {
             progress.report({ message: `Found ${totalLogs} logs. Deleting...` });
 
             const chunkSize = 200;
-            //TO DO:   Promise.allSettled for parallel delete if API allows
+            //TODO:   Promise.allSettled for parallel delete if API allows
             for (let i = 0; i < logIds.length; i += chunkSize) {
                 const chunk = logIds.slice(i, i + chunkSize);
                 progress.report({ 
@@ -231,7 +231,7 @@ export async function showSearchBox() {
     }
 }
 
-//Metodo para limpiar el filtro de busqueda de logs
+//Metodo para limpiar el filtro de busqueda de logs TODO: Sin uso actualmente
 export async function clearSearch() {
     try {
         const provider = await getLogDataProvider();

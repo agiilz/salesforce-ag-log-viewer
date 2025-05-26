@@ -116,7 +116,7 @@ export class ApexLogFileManager {
             await fs.emptyDir(this.logsPath);
             
             //Cerrar todas las tabs que coincidan con los logs locales borrados
-            //TO DO: meter que sea una setting opcional
+            //TODO: meter que sea una setting opcional
             for (const group of vscode.window.tabGroups.all) {
                 for (const tab of group.tabs) {
                     if (

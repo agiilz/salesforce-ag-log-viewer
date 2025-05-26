@@ -27,11 +27,14 @@ export class ApexLog {
     public get operation(): string { return this.entry.Operation; }
     public get request(): string { return this.entry.Request; }
     public get status(): string { return this.entry.Status; }
+    public uiStatus: string = '';
 
     constructor(
         private readonly entry: ApexLogRecord,
         private readonly connection: Connection
-    ) {}    
+    ) {        
+        this.uiStatus = entry.Status ?? '';
+    }    
     
     //Obtener el log de la org en formato gzip (jsForce lo descomprime automaticamente a String)
     public async getBody(): Promise<string> {
@@ -45,4 +48,4 @@ export class ApexLog {
         }) as string;
         return result;
     }
-} 
+}

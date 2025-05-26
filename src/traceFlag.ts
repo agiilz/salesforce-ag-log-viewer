@@ -2,7 +2,7 @@
     This module manages the creation and deletion of trace flags in Salesforce.
     It ensures that a debug level exists in the org and creates a trace flag for the user if it doesn't exist.
 
-    TO DO:
+    TODO:
     - Add support for creation of custom debug levels with the parameters specified by the user
     - Add support for enabling/disabling trace flags for different users
     - Add support for trace flags for other entities (e.g. Apex classes, triggers)
@@ -54,7 +54,7 @@ export async function ensureTraceFlag(connection: Connection, userId: string): P
         if (existingFlags.records && existingFlags.records.length > 0) {
             for (const flag of existingFlags.records) {
                 outputChannel.appendLine(`Deleting current trace flag: ${flag.Id}`);
-                //TO DO: Mass delete intead of looping through each flag to delete
+                //TODO: Mass delete intead of looping through each flag to delete
                 await connection.tooling.delete('TraceFlag', flag.Id);
             }
         }

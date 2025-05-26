@@ -313,9 +313,17 @@
         const rowDiv = document.createElement('div');
         rowDiv.className = 'grid-row';
         
-        // Set initial states based on previous state or readLogIds
-        rowDiv.dataset.read = previousState ? previousState.read.toString() : readLogIds.has(rowData.id).toString();
-        rowDiv.dataset.downloading = previousState ? previousState.downloading.toString() : 'false';
+        // Set initial states based on previous state, readLogIds, or uiStatus
+        let isRead = previousState ? previousState.read : (rowData.uiStatus === 'downloaded' || readLogIds.has(rowData.id));
+        rowDiv.dataset.read = isRead.toString();
+        // If the log is downloaded, ensure downloading is false and remove any success/green state
+        if (rowData.uiStatus === 'downloaded') {
+            rowDiv.dataset.downloading = 'false';
+            rowDiv.dataset.read = 'true';
+            if ('success' in rowDiv.dataset) delete rowDiv.dataset.success;
+        } else {
+            rowDiv.dataset.downloading = previousState ? previousState.downloading.toString() : 'false';
+        }
 
         const idCell = document.createElement('div');
         idCell.style.display = 'none';

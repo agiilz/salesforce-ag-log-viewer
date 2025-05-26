@@ -62,17 +62,16 @@ export class LogDataProvider implements vscode.Disposable {
             currentUserOnly: boolean;
         },
         activeProvider?: any
-    ): Promise<LogDataProvider> {
-        const provider = new LogDataProvider(context, connection, config, activeProvider);
+    ): Promise<LogDataProvider> {        const provider = new LogDataProvider(context, connection, config, activeProvider);
         await provider.initialize();
         return provider;
     }
 
+    //Metodo para inicializar el LogDataProvider
+    // Se asegura de que el trace flag esté activo para el usuario actual
     private async initialize() {
         try {
-            if (!this.currentUserId) {
-                this.currentUserId = await this.getCurrentUserId();
-            }
+            this.currentUserId ??= await this.getCurrentUserId();
             // Always create trace flag for the current user, regardless of mode
             if (this.currentUserId) {
                 await ensureTraceFlag(this.connection, this.currentUserId);
@@ -108,7 +107,7 @@ export class LogDataProvider implements vscode.Disposable {
         if (this.config.currentUserOnly && this.currentUserId) {
             query += ` WHERE LogUserId = '${this.currentUserId}'`;
         }
-        query += ' ORDER BY StartTime DESC LIMIT 100'; //TO DO: Cambiar el limite de logs a mostrar segun setting
+        query += ' ORDER BY StartTime DESC LIMIT 100'; //TODO: Cambiar el limite de logs a mostrar segun setting
 
         try {
             const result = await this.connection.tooling.query<ApexLogRecord>(query);
@@ -143,7 +142,7 @@ export class LogDataProvider implements vscode.Disposable {
         const newLogs = result.records.map(record => new ApexLog(record, this.connection));
         
         this.logs = newLogs
-            .filter(log => log.operation !== '<empty>') //TO DO: Filtrar logs con operación vacía o no segun setting
+            .filter(log => log.operation !== '<empty>') //TODO: Filtrar logs con operación vacía o no segun setting
             .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
 
         if (isInitialLoad) {
@@ -155,7 +154,6 @@ export class LogDataProvider implements vscode.Disposable {
             //TODO: que no filtre cuando cambio de tab, que se reinicie el filtro?
         }
     }
-
 
     //Metodo para saber si el panel esta visible al usuario y tiene que seguir autorefrescando los logs
     public setPanelVisibility(visible: boolean) {
@@ -185,7 +183,7 @@ export class LogDataProvider implements vscode.Disposable {
             clearTimeout(this.autoRefreshScheduledId);
             this.autoRefreshScheduledId = undefined;
         }
-    }    
+    }
 
     private scheduleRefresh() {
         if (this.autoRefreshScheduledId) {
@@ -229,6 +227,7 @@ export class LogDataProvider implements vscode.Disposable {
                     second: '2-digit'
                 }),
                 status: log.status,
+                uiStatus: log.uiStatus, //Para saber si el log esta sin leer, descargado o en proceso de descarga
                 size: `${(log.size / 1024).toFixed(1)}KB`,
                 operation: log.operation,
                 duration: `${log.durationMilliseconds}ms`,
@@ -246,22 +245,21 @@ export class LogDataProvider implements vscode.Disposable {
         });
     }
 
+    //Metodo para setear el texto de busqueda para filtrar los logs
     public setSearchFilter(text: string) {
         this.searchText = text;
         this._filterLogs();
         this._notifyDataChange(false);
     }
 
+    //Metodo para limpiar el filtro de los logs y notificar al panel TODO:Sin uso actual
     public clearSearch() {
         this.searchText = '';
         this._filterLogs();
         this._notifyDataChange(false);
     }
-
-    public getSearchFilter(): string {
-        return this.searchText;
-    }
-
+    
+    //Metodo para filtrar los logs segun el texto de busqueda
     private _filterLogs() {
         if (!this.searchText) {
             this.filteredLogs = [...this.logs];
@@ -275,15 +273,17 @@ export class LogDataProvider implements vscode.Disposable {
         });
     }
 
+    //Metodo para setear el modo de mostrar solo logs del usuario actual
     public async setCurrentUserOnly(showCurrentUserOnly: boolean): Promise<void> {
         if (this.config.currentUserOnly === showCurrentUserOnly) {
+            //Si el setting ya esta activo, no hace nada
             return;
         }
         this.config.currentUserOnly = showCurrentUserOnly;
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
 
-        // Always ensure trace flag for the current user, regardless of mode
+        //Comprobar que el usuario actual tiene un trace flag activo
         try {
             this.currentUserId = await this.getCurrentUserId();
             if (this.currentUserId) {
@@ -294,23 +294,28 @@ export class LogDataProvider implements vscode.Disposable {
             this.config.currentUserOnly = false;
             await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
         }
+        //Refresca los logs con el nuevo setting
         await this.refreshLogs(true, false);
         this._notifyDataChange(false);
     }
 
+    //Metodo para saber si el setting de mostrar solo logs del usuario actual esta activo
     public getCurrentUserOnlySetting(): boolean {
         return this.config.currentUserOnly;
     }
 
+    //Metodo para obtener el ID del usuario actual de la conexion a la org de Salesforce
     public async getCurrentUserId(): Promise<string> {
         const result = await this.connection.identity();
         return result.user_id;
     }
 
-
+    //Metodo para actualizar la conexion a la org de Salesforce
+    // Se asegura de que el trace flag esté activo para el usuario actual
+    // y refresca los logs con la nueva conexión
     public async updateConnection(newConnection: Connection) {
         this.connection = newConnection;
-        // When connection changes, we need to refresh the current user ID if currentUserOnly is enabled
+       
         try {
             this.currentUserId = await this.getCurrentUserId();
             if (this.currentUserId) {
@@ -322,11 +327,24 @@ export class LogDataProvider implements vscode.Disposable {
             const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
             await config.update('currentUserOnly', false, vscode.ConfigurationTarget.Global);
         }
-        // Refresh logs with the new connection
+
+        //Refresca los logs con la nueva conexión
         await this.refreshLogs(true, false);
     }
 
+    //Metodo para notificar al panel que ha habido un cambio en los datos
     public notifyDataChange(isAutoRefresh: boolean = false) {
         this._notifyDataChange(isAutoRefresh);
+    }
+
+    //Metodo para marcar un log como abierto en el panel y este se ponga en status downloaded
+    public markLogAsOpened(logId: string) {
+        //Busca el log por su ID en la lista de logs y cambia su estado a 'downloaded'
+        const log = this.logs.find(l => l.id === logId);
+        if (log && log.uiStatus !== 'downloaded') {
+            log.uiStatus = 'downloaded';
+            this._filterLogs();
+            this._notifyDataChange(false);
+        }
     }
 }
