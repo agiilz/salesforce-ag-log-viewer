@@ -116,6 +116,10 @@
         "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
         "title": "Clear Downloaded Logs",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.toggleDebugLogs",
+        "title": "Show Debug Logs"
       }
     ],
     "menus": {
@@ -149,6 +153,21 @@
           "command": "salesforce-ag-log-viewer.showOptions",
           "when": "view == salesforceLogsView",
           "group": "navigation@6"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
+          "title": "Show Debug Logs",
+          "icon": "$(bug)",
+          "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/",
+          "group": "navigation@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
+          "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/"
         }
       ]
     }

@@ -219,18 +219,26 @@ body {
 }
 
 [data-field="time"] {
+    width: 160px;
+    flex: 0 0 160px;
+}
+
+[data-field="status"] {
     width: 80px;
     flex: 0 0 80px;
 }
 
-[data-field="status"] {
-    width: 200px;
-    flex: 0 0 200px;
+[data-field="size"] {
+    width: 80px;
+    flex: 0 0 80px;
+    text-align: right;
 }
 
-[data-field="size"] {
-    width: 70px;
-    flex: 0 0 70px;
+[data-field="size"] .size-unit {
+    display: inline-block;
+    min-width: 2.5em;
+    text-align: left;
+    padding-left: 2px;
 }
 
 [data-field="operation"] {
@@ -239,8 +247,9 @@ body {
 }
 
 [data-field="duration"] {
-    width: 80px;
-    flex: 0 0 80px;
+    width: 90px;
+    flex: 0 0 90px;
+    text-align: right;
 }
 
 .resize-handle {

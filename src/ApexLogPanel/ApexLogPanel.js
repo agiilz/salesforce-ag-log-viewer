@@ -104,14 +104,19 @@
     }
 
     function timeToComparableValue(timeStr) {
-        const [hours, minutes, seconds] = timeStr.split(':').map(Number);
-        let adjustedHours;
-        if (hours >= 20) {
-            adjustedHours = hours - 24;
-        } else {
-            adjustedHours = hours;
+        // Nuevo formato: 'HH:mm:ss|||HH:mm:ss DD/MM/YYYY|||timestamp'
+        if (typeof timeStr === 'string' && timeStr.includes('|||')) {
+            const parts = timeStr.split('|||');
+            if (parts.length === 3) {
+                return parseInt(parts[2], 10);
+            }
         }
-        return adjustedHours * 3600 + minutes * 60 + seconds;
+        // Fallback: intenta parsear como antes
+        const [timePart, datePart] = timeStr.split(' ');
+        if (!timePart || !datePart) return 0;
+        const [hours, minutes, seconds] = timePart.split(':').map(Number);
+        const [day, month, year] = datePart.split('/').map(Number);
+        return new Date(year, month - 1, day, hours, minutes, seconds).getTime();
     }
 
     function sortData(data, field, ascending) {
@@ -125,9 +130,35 @@
                 return ascending ? bVal - aVal : aVal - bVal;
             }
 
-            if (field === 'size' || field === 'duration') {
-                aVal = parseFloat(aVal) || 0;
-                bVal = parseFloat(bVal) || 0;
+            if (field === 'size') {
+                // aVal y bVal son strings tipo '1.2MB' o '900.0KB'
+                function parseSize(val) {
+                    if (typeof val !== 'string') return 0;
+                    if (val.endsWith('MB')) return parseFloat(val) * 1024 * 1024;
+                    if (val.endsWith('KB')) return parseFloat(val) * 1024;
+                    return parseFloat(val) || 0;
+                }
+                aVal = parseSize(aVal);
+                bVal = parseSize(bVal);
+                return ascending ? aVal - bVal : bVal - aVal;
+            }
+
+            if (field === 'duration') {
+                // aVal y bVal son strings tipo '  1.23 s' o '   900 ms'
+                function parseDuration(val) {
+                    if (typeof val !== 'string') return 0;
+                    val = val.trim();
+                    // Extrae el número y la unidad correctamente
+                    const match = val.match(/^([\d.,]+)\s*(ms|s)$/);
+                    if (!match) return parseFloat(val) || 0;
+                    const num = parseFloat(match[1].replace(',', '.'));
+                    const unit = match[2];
+                    if (unit === 's') return num * 1000;
+                    if (unit === 'ms') return num;
+                    return num;
+                }
+                aVal = parseDuration(aVal);
+                bVal = parseDuration(bVal);
                 return ascending ? aVal - bVal : bVal - aVal;
             }
 
@@ -350,27 +381,38 @@
             const cell = document.createElement('div');
             cell.className = 'grid-cell';
             cell.dataset.field = field;
-            cell.textContent = rowData[field];
-            
+            let timeTooltip = undefined;
+            if (field === 'time' && typeof rowData[field] === 'string' && rowData[field].includes('|||')) {
+                const [display, tooltip] = rowData[field].split('|||');
+                cell.textContent = display;
+                cell.title = tooltip;
+                timeTooltip = tooltip;
+            } else {
+                cell.textContent = rowData[field];
+            }
             const width = columnWidths.get(field);
             if (width) {
                 cell.style.width = `${width}px`;
                 cell.style.flex = `0 0 ${width}px`;
-                
                 const tempSpan = document.createElement('span');
                 tempSpan.style.visibility = 'hidden';
                 tempSpan.style.position = 'absolute';
                 tempSpan.style.whiteSpace = 'nowrap';
-                tempSpan.textContent = rowData[field];
+                tempSpan.textContent = (field === 'time' && typeof rowData[field] === 'string' && rowData[field].includes('|||'))
+                    ? rowData[field].split('|||')[0]
+                    : rowData[field];
                 document.body.appendChild(tempSpan);
-                
                 const contentWidth = tempSpan.offsetWidth;
                 document.body.removeChild(tempSpan);
-                
                 const availableWidth = width - 12;
                 if (contentWidth > availableWidth) {
                     cell.dataset.truncated = 'true';
-                    cell.title = rowData[field];
+                    // For 'time', always use the friendly tooltip, not the raw value
+                    if (field === 'time' && timeTooltip) {
+                        cell.title = timeTooltip;
+                    } else {
+                        cell.title = rowData[field];
+                    }
                 }
             }
             

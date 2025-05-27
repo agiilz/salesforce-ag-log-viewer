@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
-import { LogDataProvider } from './logDataProvider';
+import { LogDataProvider } from './ApexLogDataProvider';
 import { ApexLog } from './ApexLogWrapper';
 import * as path from 'path';
 import { getConnection } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs } from './commands';
 import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
+import { ApexLogUserDebug } from './ApexLogUserDebug';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -16,6 +17,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(outputChannel);
     outputChannel.show(true); // Make output visible
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
+    
+    // Register the ApexLogUserDebug command
+    ApexLogUserDebug.registerCommand(context);
     
     try {
         //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
@@ -109,8 +113,7 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
 
 // Este metodo registra los comandos de la extension y los asocia a sus handlers
 function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPanelProvider) {
-    type CommandHandler = (...args: any[]) => any;
-    const commands: [string, CommandHandler][] = [
+    type CommandHandler = (...args: any[]) => any;    const commands: [string, CommandHandler][] = [
         ['salesforce-ag-log-viewer.refreshLogs', async () => await provider.refresh()],
         ['salesforce-ag-log-viewer.openLog', openLog],
         ['salesforce-ag-log-viewer.toggleCurrentUserOnly', setLogVisibility],
@@ -119,7 +122,8 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
         ['salesforce-ag-log-viewer.showOptions', showOptions],
         ['salesforce-ag-log-viewer.showSearchBox', showSearchBox],
         ['salesforce-ag-log-viewer.clearSearch', clearSearch],
-        ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs]
+        ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs],
+        // The toggleDebugLogs command is already registered by ApexLogUserDebug.registerCommand
     ];
 
     const disposables = commands.map(([id, handler]) => 

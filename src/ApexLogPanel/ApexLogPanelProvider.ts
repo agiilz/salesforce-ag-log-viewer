@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { LogDataProvider } from '../logDataProvider';
+import { LogDataProvider } from '../ApexLogDataProvider';
 import * as fs from 'fs';
 import * as path from 'path';
 import { openLog } from '../extension';

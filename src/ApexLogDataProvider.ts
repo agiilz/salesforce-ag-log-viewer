@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Connection } from 'jsforce';
 import { ApexLog, ApexLogRecord } from './ApexLogWrapper';
 import { ApexLogFileManager } from './ApexLogFileManager';
-import { ensureTraceFlag } from './traceFlag';
+import { ensureTraceFlag } from './TraceFlagManager';
 import { outputChannel } from './extension';
 
 export interface LogDataChangeEvent {
@@ -27,12 +27,12 @@ export class LogDataProvider implements vscode.Disposable {
 
     // Column definitions for the data grid
     readonly columns = [
-        { label: 'User', field: 'user', width: 150 },
-        { label: 'Time', field: 'time', width: 80 },
-        { label: 'Status', field: 'status', width: 80 },
-        { label: 'Size', field: 'size', width: 80 },
-        { label: 'Operation', field: 'operation', width: 400 },
-        { label: 'Duration', field: 'duration', width: 80 }
+        { label: 'User', field: 'user'},
+        { label: 'Time', field: 'time'},
+        { label: 'Status', field: 'status'},
+        { label: 'Size', field: 'size'},
+        { label: 'Operation', field: 'operation'},
+        { label: 'Duration', field: 'duration'}
     ];
 
     constructor(
@@ -185,16 +185,19 @@ export class LogDataProvider implements vscode.Disposable {
         }
     }
 
+    //Metodo para programar el autorefresh de logs segun el intervalo configurado
+    // Solo se ejecuta si el panel está visible y el auto-refresh no está pausado
     private scheduleRefresh() {
         if (this.autoRefreshScheduledId) {
             clearTimeout(this.autoRefreshScheduledId);
         }
-        // Only schedule refresh if panel is visible AND auto-refresh is not paused
+
         if (this.isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
             this.autoRefreshScheduledId = setTimeout(() => this.refreshLogs(false, true), this.config.refreshInterval);
         }
     }
 
+    //metodo para activar o desactivar el autorefresh de logs
     public async setAutoRefresh(enabled: boolean): Promise<void> {
         if (this.config.autoRefresh === enabled) {
             return;
@@ -204,7 +207,7 @@ export class LogDataProvider implements vscode.Disposable {
         await config.update('autoRefresh', this.config.autoRefresh, vscode.ConfigurationTarget.Global);
 
         if (enabled && this.isVisible) {
-            // Only start auto-refresh if panel is visible
+            //Si se activa el autorefresh y el panel está visible inicia el autorefresh
             this.startAutoRefresh();
         } else {
             this.stopAutoRefresh();
@@ -215,34 +218,54 @@ export class LogDataProvider implements vscode.Disposable {
         return this.config.autoRefresh;
     }
 
+    //Metodo para obtener los datos de los logs en formato adecuado para el grid del panel
     public getGridData(): any[] {
-        return this.filteredLogs.map(log => {
-            const cleanLog = {
-                id: log.id,
-                user: log.user,
-                time: new Date(log.startTime).toLocaleTimeString('en-US', {
+        return this.filteredLogs.map(log => ({
+            id: log.id,
+            user: log.user,
+            time: (() => {
+                const date = new Date(log.startTime);
+                const timeStr = date.toLocaleTimeString('es-ES', {
                     hour12: false,
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit'
-                }),
-                status: log.status,
-                uiStatus: log.uiStatus, //Para saber si el log esta sin leer, descargado o en proceso de descarga
-                size: `${(log.size / 1024).toFixed(1)}KB`,
-                operation: log.operation,
-                duration: `${log.durationMilliseconds}ms`,
-                logData: {
-                    id: log.id,
-                    startTime: log.startTime,
-                    size: log.size,
-                    status: log.status,
-                    operation: log.operation,
-                    user: log.user,
-                    durationMilliseconds: log.durationMilliseconds
+                });
+                const dateStr = date.toLocaleDateString('es-ES', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                });
+                // Para ordenación, se incluye el timestamp en ms
+                return `${timeStr}|||${timeStr} ${dateStr}|||${date.getTime()}`;
+            })(),
+            status: log.status,
+            uiStatus: log.uiStatus, // Para saber si el log está sin leer, descargado o en proceso de descarga
+            size: (() => {
+                let value, unit;
+                if (log.size >= 1024 * 1024) {
+                    value = (log.size / 1024 / 1024).toFixed(1);
+                    unit = 'MB';
+                } else {
+                    value = (log.size / 1024).toFixed(1);
+                    unit = 'KB';
                 }
-            };
-            return cleanLog;
-        });
+                // Devuelve un string normal, con espacios para alinear, sin HTML ni cambio de fuente
+                return value.padStart(6, ' ') + ' ' + unit;
+            })(),
+            operation: log.operation,
+            duration: (() => {
+                let value, unit;
+                if (log.durationMilliseconds >= 1000) {
+                    value = (log.durationMilliseconds / 1000).toFixed(2);
+                    unit = 's';
+                } else {
+                    value = log.durationMilliseconds.toString();
+                    unit = 'ms';
+                }
+                return value.padStart(6, ' ') + ' ' + unit;
+            })(),
+        }));
     }
 
     //Metodo para setear el texto de busqueda para filtrar los logs
@@ -273,7 +296,7 @@ export class LogDataProvider implements vscode.Disposable {
         });
     }
 
-    //Metodo para setear el modo de mostrar solo logs del usuario actual
+    //Metodo para setear el modo de mostrar solo logs del usuario currente
     public async setCurrentUserOnly(showCurrentUserOnly: boolean): Promise<void> {
         if (this.config.currentUserOnly === showCurrentUserOnly) {
             //Si el setting ya esta activo, no hace nada
