@@ -1,22 +1,36 @@
 # Salesforce AG Log Viewer for VS Code
 
-A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability. Inspired by the log feature in [@Vlocode](https://github.com/Codeneos/vlocode)
+A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability. 
 
 Preview:
 ![image](https://github.com/user-attachments/assets/cb168da2-a030-44c7-b313-883262ffed43)
 
 ## Features
 
-* **Real-time Log Updates**: Automatically refresh logs at configurable intervals
-* **Smart Auto-Refresh**: Saves resources by only refreshing when the log panel is visible
-* **Log Filtering**: Filter logs by user or operation
-* **Unread Log Indicators**: Green dots indicate unread logs, changing to gray once viewed
-* **Current User Focus**: Option to show only logs from the currently authenticated user or all organization logs
-* **Grid View**: Clear, organized display of logs with sortable columns
-* **Column Resizing**: Customize column widths to your preference
-* **Truncation Handling**: Long text is truncated with tooltips showing full content
-* **Batch Operations**: Delete multiple logs at once
-* **Improved Log Loading**: Better handling of large logs with gzip compression
+### 📊 Interactive Log Viewer
+- Real-time log monitoring with auto-refresh capability
+- Sortable and customizable column layout
+- Visual indicators for unread and downloading logs
+- Search functionality by User/Operation for quick log filtering
+- Opening and downloading logs from your Salesforce Org
+- Option to clear all debug logs from your org
+
+### 🔍 Advanced Log Analysis
+- Filter logs by current user or view logs from all users
+- Quick button to show only USER_DEBUG statements 
+- Intelligent line number preservation when switching views between USER_DEBUG statements or all log.
+- Size-optimized display (KB/MB) and duration formatting (ms/s)
+
+### ⚡ Performance Features
+- Efficient log caching to avoid redundant downloads
+- GZIP compression support for large log files
+- Background log processing for smooth UI experience
+- Smart state preservation during auto-refresh when scrolling
+
+### 🛠️ Configuration Options
+- Customizable auto-refresh interval
+- Current user only/all users toggle
+- Customizable refresh intervals
 
 ## Requirements
 
@@ -33,76 +47,31 @@ Preview:
 
 ## Usage
 
-1. Open the Salesforce Log Viewer panel from the bottom panel area
-2. Use the toolbar buttons to:
-   * Refresh logs manually
-   * Toggle auto-refresh
-   * Filter logs
-   * Switch between all users/current user
-   * Delete downloaded logs
-   * Delete all logs from the current org
-   * Configure options
-3. Visual Indicators:
-   * Green dot: Unread log
-   * Yellow dot: Downloading log
-   * Gray dot: Read log
-   * Selected row: Clearly highlighted current selection
+### Getting Started
+1. Connect to your Salesforce org through VS Code
+2. Open the Salesforce AG Log Viewer panel from the Activity Bar
+3. Your debug logs will automatically appear in the viewer
 
-## Extension Settings
 
-This extension contributes the following settings:
+### Visual Indicators
+- 🟢 Green dot: Unread log
+- 🟡 Yellow dot: Downloading log
+- ⚪ Gray dot: Read log
 
-* `salesforceAgLogViewer.autoRefresh`: Enable/disable automatic log refresh
-* `salesforceAgLogViewer.refreshInterval`: Set the auto-refresh interval (milliseconds)
-* `salesforceAgLogViewer.currentUserOnly`: Show logs only for the current user
+## Configuration Settings
+
+- `salesforceAgLogViewer.autoRefresh`: Enable/disable automatic log refresh
+- `salesforceAgLogViewer.refreshInterval`: Set the auto-refresh interval
+- `salesforceAgLogViewer.currentUserOnly`: Show only current user's logs
 
 ## Future Improvements
 
-   * Add option to enable logs for a specific user from extension
-   * Add an option to filter to show only DEBUG_LOG in the downloaded log
+   * Add an option to manage traces flags for a specific user
 
 ## Release Notes
 
-### 1.1.0
-* Added new search box for inline log filtering in the webview panel.
-* Improved trace flag management.
-* Enhanced error handling and user feedback.
-* UI/UX improvements and general bug fixes.
+Check the CHANGELOG.md FILE for details
 
-### 1.0.9
-
-Visual Indicator Improvements:
-* Added yellow circle indicator while logs are being downloaded
-* Fixed state preservation during auto-refresh
-* Improved visual feedback when downloading and reading logs
-
-### 1.0.6
-
-UI and Performance Improvements:
-* Added visual indicators for unread logs
-* Improved grid performance
-* Fixed flickering during auto-refresh
-* Improved hover state persistence for the current selected log
-* Better handling of large logs with gzip compression
-* Consolidated output channels for cleaner logging
-* Added cache managment for already downloaded logs to avoid downloading them again
-
-### 1.0.5
-
-User experience improvements:
-* Fixed auto-scroll issue during auto-refresh to maintain scroll position
-* Changed extension default location to bottom panel instead of activity bar
-* Fixed duplicate trace flag creation issue
-* Improved grid layout and responsiveness
-* Added button to clear downloaded local log files
-
-### 1.0.0
-
-Initial release with core functionality:
-* Auto-refreshing log viewer
-* Log filtering and management
-* Column customization and sorting
-* Performance optimizations
 
 ## License
 
