@@ -49,6 +49,12 @@
           "type": "boolean",
           "default": true,
           "description": "Show logs only for the current user"
+        },
+        "salesforceAgLogViewer.traceFlagExpirationInterval": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Default: 15."
         }
       }
     },
@@ -120,6 +126,16 @@
       {
         "command": "salesforce-ag-log-viewer.toggleDebugLogs",
         "title": "Show Debug Logs"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
+        "title": "Set TraceFlag for User",
+        "icon": "$(flag)"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
+        "title": "Delete All Trace Flags (Except Current User)",
+        "icon": "$(circle-slash)"
       }
     ],
     "menus": {
@@ -140,19 +156,29 @@
           "group": "navigation@3"
         },
         {
-          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
+          "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
           "when": "view == salesforceLogsView",
           "group": "navigation@4"
         },
         {
-          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
           "when": "view == salesforceLogsView",
           "group": "navigation@5"
         },
         {
-          "command": "salesforce-ag-log-viewer.showOptions",
+          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
           "when": "view == salesforceLogsView",
           "group": "navigation@6"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@7"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.showOptions",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@8"
         }
       ],
       "editor/title": [
