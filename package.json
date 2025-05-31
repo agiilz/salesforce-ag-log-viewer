@@ -81,61 +81,61 @@
       {
         "command": "salesforce-ag-log-viewer.refreshLogs",
         "title": "Refresh Logs",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "salesforce-ag-log-viewer.openLog",
-        "title": "Open Log",
-        "icon": "$(file)"
+        "icon": "$(refresh)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
-        "title": "Toggle Current User Only",
-        "icon": "$(person)"
+        "title": "Log Visibility",
+        "icon": "$(person)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.deleteAllLogs",
         "title": "Delete All Logs",
-        "icon": "$(trash)"
+        "icon": "$(trash)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.showOptions",
         "title": "Show Options",
-        "icon": "$(gear)"
+        "icon": "$(gear)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.showSearchBox",
         "title": "Search Logs",
-        "icon": "$(search)"
-      },
-      {
-        "command": "salesforce-ag-log-viewer.clearSearch",
-        "title": "Clear Search",
-        "icon": "$(clear-all)"
+        "icon": "$(search)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
         "title": "Toggle Auto Refresh",
-        "icon": "$(sync)"
+        "icon": "$(sync)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
         "title": "Clear Downloaded Logs",
-        "icon": "$(clear-all)"
+        "icon": "$(clear-all)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-        "title": "Show Debug Logs"
+        "title": "Show Debug Logs",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
         "title": "Set TraceFlag for User",
-        "icon": "$(flag)"
+        "icon": "$(flag)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
         "title": "Delete All Trace Flags (Except Current User)",
-        "icon": "$(circle-slash)"
+        "icon": "$(circle-slash)",
+        "category": "Salesforce AG Log Viewer"
       }
     ],
     "menus": {
