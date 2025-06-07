@@ -100,3 +100,26 @@ function executeCommand(command: string): Promise<{ stdout: string, stderr: stri
         });
     });
 }
+
+/**
+ * Runs a Salesforce API call and automatically retries once if the session is expired.
+ * @param fn The function to execute, which should use the current connection.
+ * @param provider Optional LogDataProvider to update connection if needed.
+ */
+export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Promise<T>, provider?: any): Promise<T> {
+    let connection = provider?.connection ?? await getConnection();
+    try {
+        return await fn(connection);
+    } catch (error: any) {
+        const msg = error?.message || error?.toString() || '';
+        if (msg.includes('INVALID_SESSION_ID') || msg.includes('Session expired') || msg.includes('expired access token')) {
+            outputChannel.appendLine('Session expired, attempting to reconnect...');
+            const newConnection = await getConnection();
+            if (provider && typeof provider.updateConnection === 'function') {
+                await provider.updateConnection(newConnection);
+            }
+            return await fn(newConnection);
+        }
+        throw error;
+    }
+}

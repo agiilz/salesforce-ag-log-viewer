@@ -55,6 +55,11 @@
           "default": 15,
           "minimum": 5,
           "description": "Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Default: 15."
+        },
+        "salesforceAgLogViewer.showOutputOnStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Salesforce AG Log Viewer output channel when the extension starts"
         }
       }
     },

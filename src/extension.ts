@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { LogDataProvider } from './ApexLogDataProvider';
 import { ApexLog } from './ApexLogWrapper';
 import * as path from 'path';
-import { getConnection } from './connection';
+import { getConnection, retryOnSessionExpire } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs, setTraceFlagForUser, deleteAllTraceFlagsExceptCurrent } from './commands';
 import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
 import { ApexLogUserDebug } from './ApexLogUserDebug';
@@ -15,8 +15,12 @@ export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Lo
 
 export async function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
+    const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+    const showOutputOnStart = config.get<boolean>('showOutputOnStart') ?? true;
     context.subscriptions.push(outputChannel);
-    outputChannel.show(true); // Make output visible
+    if (showOutputOnStart) {
+        outputChannel.show(true); // Make output visible
+    }
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
     
     // Register the ApexLogUserDebug command
@@ -45,8 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         outputChannel.appendLine('Extension activation complete');
 
-        //TODO: Hacer que no se enfoque el output si no se quiere
-        //Despues de mostrar el output, enfocar el panel de logs
+        //TODO: setting para mostrar el panel de logs al activarse o no
         setTimeout(() => {
             vscode.commands.executeCommand('salesforceLogsView.focus');
         }, 500); //Delay antes de cerrar el output panel
@@ -82,6 +85,8 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     watcher.onDidChange(async () => {
         try {
             if (logDataProvider && activeProvider) {
+                // Always stop all trace flag keep-alive timers before switching orgs
+                stopTraceFlagKeepAlive();
                 //Mostrar notificacion de cambio de org si el panel esta visible
                 if (logDataProvider['isVisible']) {
                     await vscode.window.withProgress({
@@ -170,8 +175,11 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
 export async function openLog(data: { id: string }) {
     try {
         const provider = await getLogDataProvider();
-        // Query the full log details with type assertion
-        const result = await provider.connection.tooling.retrieve('ApexLog', data.id) as any;
+        // Use retryOnSessionExpire to handle session expiration
+        const result = await retryOnSessionExpire(
+            (conn) => conn.tooling.retrieve('ApexLog', data.id) as Promise<any>,
+            provider
+        );
         if (!result) {
             throw new Error(`Log with ID ${data.id} not found`);
         }
