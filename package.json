@@ -126,11 +126,6 @@
         "category": "Salesforce AG Log Viewer"
       },
       {
-        "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-        "title": "Show Debug Logs",
-        "category": "Salesforce AG Log Viewer"
-      },
-      {
         "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
         "title": "Set TraceFlag for User",
         "icon": "$(flag)",
@@ -140,6 +135,12 @@
         "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
         "title": "Delete All Trace Flags (Except Current User)",
         "icon": "$(circle-slash)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.showLogDetails",
+        "title": "Log Details",
+        "icon": "$(list-flat)",
         "category": "Salesforce AG Log Viewer"
       }
     ],
@@ -188,17 +189,11 @@
       ],
       "editor/title": [
         {
-          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-          "title": "Show Debug Logs",
-          "icon": "$(bug)",
+          "command": "salesforce-ag-log-viewer.showLogDetails",
+          "title": "Log Details",
+          "icon": "$(list-flat)",
           "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/",
-          "group": "navigation@1"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-          "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/"
+          "group": "navigation@2"
         }
       ]
     }

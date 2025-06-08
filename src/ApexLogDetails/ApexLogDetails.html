@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Log Details</title>
+    <link rel="stylesheet" type="text/css" href="${styleUri}">
+</head>
+<body>
+    <div class="filter-bar">
+        <label><input type="checkbox" id="hide-heap-allocate" checked> Hide HEAP_ALLOCATE</label>
+        <label><input type="checkbox" id="only-user-debug"> Show Debug Logs</label>
+    </div>
+    <div id="log-table-container">
+        <table id="log-table">
+            <thead>
+                <tr><th></th><th>Time</th><th>Event</th><th>Line</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+    <template id="collapse-cell-template">
+        <td><button class="collapse-btn" data-block="" title="Collapse/Expand">▾</button></td>
+    </template>
+    <script src="${scriptUri}"></script>
+</body>
+</html>

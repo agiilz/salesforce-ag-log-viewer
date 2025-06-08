@@ -5,8 +5,8 @@ import * as path from 'path';
 import { getConnection, retryOnSessionExpire } from './connection';
 import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs, setTraceFlagForUser, deleteAllTraceFlagsExceptCurrent } from './commands';
 import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
-import { ApexLogUserDebug } from './ApexLogUserDebug';
 import { stopTraceFlagKeepAlive } from './TraceFlagManager';
+import { ApexLogDetails } from './ApexLogDetails/ApexLogDetails';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -23,8 +23,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
     
-    // Register the ApexLogUserDebug command
-    ApexLogUserDebug.registerCommand(context);
+    // Register the ApexLogDetails command
+    ApexLogDetails.registerCommand(context);
     
     try {
         //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
@@ -131,8 +131,7 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
         ['salesforce-ag-log-viewer.clearSearch', clearSearch],
         ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs],
         ['salesforce-ag-log-viewer.setTraceFlagForUser', setTraceFlagForUser],
-        ['salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent', deleteAllTraceFlagsExceptCurrent],
-        // The toggleDebugLogs command is already registered by ApexLogUserDebug.registerCommand
+        ['salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent', deleteAllTraceFlagsExceptCurrent]
     ];
 
     const disposables = commands.map(([id, handler]) => 
