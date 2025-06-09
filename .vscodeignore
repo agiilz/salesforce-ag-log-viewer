@@ -8,6 +8,9 @@ src
 !src/ApexLogPanel/ApexLogPanel.html
 !src/ApexLogPanel/ApexLogPanel.css
 !src/ApexLogPanel/ApexLogPanel.js
+!src/ApexLogDetails/ApexLogDetails.html
+!src/ApexLogDetails/ApexLogDetails.css
+!src/ApexLogDetails/ApexLogDetails.js
 
 # Exclude VS Code and git config
 .vscode
