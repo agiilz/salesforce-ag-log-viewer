@@ -1,10 +1,15 @@
 # Exclude all node_modules since we're bundling
 node_modules
 
-# Exclude source TypeScript files
-src
+# Exclude source TypeScript files and maps
+src/**/*.ts
+src/**/*.map
+src/**/*.test.*
+src/**/*.spec.*
+
+# Only include built webview assets and used images
 !src/images/agLogViewer_logo.png
-!src/images/agxLabs_logo.png
+!src/images/agxLabs_logov2.png
 !src/ApexLogPanel/ApexLogPanel.html
 !src/ApexLogPanel/ApexLogPanel.css
 !src/ApexLogPanel/ApexLogPanel.js
@@ -21,7 +26,13 @@ src
 out/test
 tsconfig.json
 README.md
-*.map
+*.md
+*.yml
+*.yaml
+*.json
+*.eslintrc*
+*.prettierrc*
+esbuild.js
 
 # Exclude OS-specific files
 *.log
