@@ -34,13 +34,7 @@ export class ApexLogDetails {
         html = html.replace('${scriptUri}', scriptUri.toString());
         html = html.replace('${styleUri}', styleUri.toString());
         panel.webview.html = html;
-        // Wait for 'ready' message from webview before sending log data
-        panel.webview.onDidReceiveMessage((msg) => {
-            outputChannel.appendLine(`[LogDetails] Webview message received: ${JSON.stringify(msg)}`);
-            if (msg && msg.type === 'ready') {
-                outputChannel.appendLine(`[LogDetails] Sending logContent (${logContent.length} chars) to webview for file: ${fileName}`);
-                panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
-            }
-        });
+        // Enviar logContent directamente tras setear el HTML
+        panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
     }
 }
