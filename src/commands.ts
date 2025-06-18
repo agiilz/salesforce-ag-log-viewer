@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { getLogDataProvider } from './extension';
+import { enableTraceFlagForUser, disableTraceFlagForUser } from './TraceFlagManager';
+import { retryOnSessionExpire } from './connection';
 
 //Metodo para cambiar la visibilidad de los logs que se muestran en el panel
 export async function setLogVisibility() {
@@ -64,7 +66,7 @@ export async function deleteAllLogs() {
             const connection = provider.connection;
 
             progress.report({ message: "Querying log IDs..." });
-            const result = await connection.tooling.query<{ Id: string }>('SELECT Id FROM ApexLog');
+            const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog'), provider) as { records: { Id: string }[] };
             
             if (!result.records || result.records.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
@@ -86,7 +88,7 @@ export async function deleteAllLogs() {
                     message: `Deleting logs ${i + 1}-${Math.min(i + chunkSize, totalLogs)} of ${totalLogs}...`, 
                     increment: (chunk.length / totalLogs) * 100 
                 });
-                await connection.tooling.destroy('ApexLog', chunk);
+                await retryOnSessionExpire(async (conn) => await conn.tooling.destroy('ApexLog', chunk), provider);
             }
 
             vscode.window.showInformationMessage(`Successfully deleted ${totalLogs} logs.`);
@@ -96,7 +98,7 @@ export async function deleteAllLogs() {
             /* TODO: Uncomment if you want to clear the local downloaded logs cache
 
             // Also clear the local downloaded logs cache to avoid VS Code showing new logs as deleted
-            await provider.logViewer.clearDownloadedLogs(); 
+            await provider.logViewer.clearDownloadedLogs();
 
 
             // Close all open editors for files in the .logs directory to avoid showing deleted files
@@ -163,6 +165,8 @@ export async function showOptions() {
     const provider = await getLogDataProvider();
     const currentAutoRefresh = provider.getAutoRefreshSetting();
     const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+    const traceFlagExpiration = config.get<number>('traceFlagExpirationInterval') ?? 15;
+    const showOutputOnStart = config.get<boolean>('showOutputOnStart') ?? true;
 
     const items: vscode.QuickPickItem[] = [
         {
@@ -175,6 +179,17 @@ export async function showOptions() {
             label: "Refresh Interval",
             description: `${config.get('refreshInterval')}ms`,
             detail: "Set the interval between automatic refreshes"
+        },
+        {
+            label: "Trace Flag update expiration time interval",
+            description: `${traceFlagExpiration} min` + (traceFlagExpiration < 5 ? ' (minimum 5)' : ''),
+            detail: "Set the update interval (in minutes) for Salesforce trace flags expiration time. Minimum: 5, Default: 15."
+        },
+        {
+            label: "Show Output on Start",
+            description: showOutputOnStart ? "✓ Enabled" : "✗ Disabled",
+            detail: "Show the Salesforce AG Log Viewer output channel when the extension starts",
+            picked: showOutputOnStart
         }
     ];
 
@@ -194,6 +209,31 @@ export async function showOptions() {
         case "Refresh Interval":
             await setRefreshInterval(config);
             break;
+        case "Trace Flag update expiration time interval":
+            await setTraceFlagExpirationInterval(config, traceFlagExpiration);
+            break;
+        case "Show Output on Start":
+            await setShowOutputOnStart(config, showOutputOnStart);
+            break;
+    }
+}
+
+//Set trace flag expiration interval in minutes + validation input
+async function setTraceFlagExpirationInterval(config: vscode.WorkspaceConfiguration, current: number) {
+    const interval = await vscode.window.showInputBox({
+        prompt: "Enter trace flag expiration interval in minutes (minimum 5)",
+        value: current.toString(),
+        validateInput: (value) => {
+            const num = parseInt(value);
+            if (isNaN(num) || num < 5) {
+                return "Please enter a valid number greater than or equal to 5";
+            }
+            return null;
+        }
+    });
+    if (interval) {
+        await config.update('traceFlagExpirationInterval', parseInt(interval), vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Trace flag expiration interval set to ${interval} minutes`);
     }
 }
 
@@ -264,4 +304,85 @@ export async function clearDownloadedLogs() {
         const errorMessage = error?.message || 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to clear downloaded logs: ${errorMessage}`);
     }
+}
+
+// Command to set trace flag for a selected user
+export async function setTraceFlagForUser() {
+    try {
+        const provider = await getLogDataProvider();
+        const connection = provider.connection;
+        const currentUserId = await provider.getCurrentUserId();
+        
+        // Query all active users except current user
+        const userResult = await connection.query<any>(
+            `SELECT Id, Name, Username FROM User WHERE IsActive = true AND Id != '${currentUserId}' ORDER BY Name`
+        );
+        if (!userResult.records || userResult.records.length === 0) {
+            vscode.window.showWarningMessage('No active users found in the org.');
+            return;
+        }
+
+        // Query all active trace flags for users
+        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId, ExpirationDate FROM TraceFlag WHERE ExpirationDate > ${new Date().toISOString()}`), provider) as { records: any[] };
+        const userIdToTraceFlag = new Map<string, string>();
+        for (const tf of traceFlagResult.records || []) {
+            userIdToTraceFlag.set(tf.TracedEntityId, tf.Id);
+        }
+        const items = userResult.records.map((user: any) => {
+            const hasFlag = userIdToTraceFlag.has(user.Id);
+            const icon = hasFlag ? '✅' : '❌';
+            return {
+                label: `${icon} ${user.Name}`,
+                description: user.Username,
+                userId: user.Id,
+                hasTraceFlag: hasFlag
+            };
+        });
+        const picked = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a user to enable a trace flag',
+            ignoreFocusOut: true
+        });
+        if (!picked) return;
+        if (picked.hasTraceFlag) {
+            await disableTraceFlagForUser(connection, picked.userId);
+            vscode.window.showInformationMessage(`Trace flag disabled for user: ${picked.label}`);
+            return;
+        } else {
+            await enableTraceFlagForUser(connection, picked.userId);
+            vscode.window.showInformationMessage(`Trace flag enabled and will be auto-updated for user: ${picked.label}`);
+        }
+    } catch (error: any) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to manage trace flag for user: ${errorMessage}`);
+    }
+}
+
+// Command to delete all trace flags except the current user's
+export async function deleteAllTraceFlagsExceptCurrent() {
+    try {
+        const provider = await getLogDataProvider();
+        const connection = provider.connection;
+        const currentUserId = await provider.getCurrentUserId();
+        // Query all trace flags except the current user's and the active ones
+        const nowIso = new Date().toISOString();
+        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId FROM TraceFlag WHERE TracedEntityId != '${currentUserId}' AND ExpirationDate < ${nowIso}`), provider) as { records: any[] };
+        if (!traceFlagResult.records || traceFlagResult.records.length === 0) {
+            vscode.window.showInformationMessage('No trace flags found to delete');
+            return;
+        }
+        for (const tf of traceFlagResult.records) {
+            await retryOnSessionExpire(async (conn) => await conn.tooling.delete('TraceFlag', tf.Id), provider);
+        }
+        vscode.window.showInformationMessage('All trace flags deleted except the current user.');
+    } catch (error: any) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to delete trace flags: ${errorMessage}`);
+    }
+}
+
+// Opcion para mostrar el output channel al iniciar la extension
+async function setShowOutputOnStart(config: vscode.WorkspaceConfiguration, current: boolean) {
+    const newValue = !current;
+    await config.update('showOutputOnStart', newValue, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(`Show Output on Start set to ${newValue ? 'Enabled' : 'Disabled'}`);
 }

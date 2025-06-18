@@ -4,6 +4,7 @@ import { ApexLog, ApexLogRecord } from './ApexLogWrapper';
 import { ApexLogFileManager } from './ApexLogFileManager';
 import { ensureTraceFlag } from './TraceFlagManager';
 import { outputChannel } from './extension';
+import { retryOnSessionExpire } from './connection';
 
 export interface LogDataChangeEvent {
     data: any[];
@@ -24,16 +25,6 @@ export class LogDataProvider implements vscode.Disposable {
     public readonly logFileManager: ApexLogFileManager;
     private readonly context: vscode.ExtensionContext;
     private isVisible: boolean = false;
-
-    // Column definitions for the data grid
-    readonly columns = [
-        { label: 'User', field: 'user'},
-        { label: 'Time', field: 'time'},
-        { label: 'Status', field: 'status'},
-        { label: 'Size', field: 'size'},
-        { label: 'Operation', field: 'operation'},
-        { label: 'Duration', field: 'duration'}
-    ];
 
     constructor(
         context: vscode.ExtensionContext,
@@ -110,7 +101,8 @@ export class LogDataProvider implements vscode.Disposable {
         query += ' ORDER BY StartTime DESC LIMIT 100'; //TODO: Cambiar el limite de logs a mostrar segun setting
 
         try {
-            const result = await this.connection.tooling.query<ApexLogRecord>(query);
+
+            const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query(query), this) as { records: ApexLogRecord[] };
 
             if (!result.records || result.records.length === 0) {
                 //Si no hay registros en la org, se limpia el array de logs para mostrarlo vacio al usuario

@@ -2,10 +2,11 @@ import * as vscode from 'vscode';
 import { LogDataProvider } from './ApexLogDataProvider';
 import { ApexLog } from './ApexLogWrapper';
 import * as path from 'path';
-import { getConnection } from './connection';
-import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs } from './commands';
+import { getConnection, retryOnSessionExpire } from './connection';
+import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSearchBox, clearSearch, clearDownloadedLogs, setTraceFlagForUser, deleteAllTraceFlagsExceptCurrent } from './commands';
 import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
-import { ApexLogUserDebug } from './ApexLogUserDebug';
+import { stopTraceFlagKeepAlive } from './TraceFlagManager';
+import { ApexLogDetails } from './ApexLogDetails/ApexLogDetails';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -14,12 +15,16 @@ export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Lo
 
 export async function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
+    const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+    const showOutputOnStart = config.get<boolean>('showOutputOnStart') ?? true;
     context.subscriptions.push(outputChannel);
-    outputChannel.show(true); // Make output visible
+    if (showOutputOnStart) {
+        outputChannel.show(true); // Make output visible
+    }
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
     
-    // Register the ApexLogUserDebug command
-    ApexLogUserDebug.registerCommand(context);
+    // Register the ApexLogDetails command
+    ApexLogDetails.registerCommand(context);
     
     try {
         //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
@@ -44,8 +49,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         outputChannel.appendLine('Extension activation complete');
 
-        //TODO: Hacer que no se enfoque el output si no se quiere
-        //Despues de mostrar el output, enfocar el panel de logs
+        //TODO: setting para mostrar el panel de logs al activarse o no
         setTimeout(() => {
             vscode.commands.executeCommand('salesforceLogsView.focus');
         }, 500); //Delay antes de cerrar el output panel
@@ -81,6 +85,8 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     watcher.onDidChange(async () => {
         try {
             if (logDataProvider && activeProvider) {
+                // Always stop all trace flag keep-alive timers before switching orgs
+                stopTraceFlagKeepAlive();
                 //Mostrar notificacion de cambio de org si el panel esta visible
                 if (logDataProvider['isVisible']) {
                     await vscode.window.withProgress({
@@ -113,7 +119,8 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
 
 // Este metodo registra los comandos de la extension y los asocia a sus handlers
 function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPanelProvider) {
-    type CommandHandler = (...args: any[]) => any;    const commands: [string, CommandHandler][] = [
+    type CommandHandler = (...args: any[]) => any;
+    const commands: [string, CommandHandler][] = [
         ['salesforce-ag-log-viewer.refreshLogs', async () => await provider.refresh()],
         ['salesforce-ag-log-viewer.openLog', openLog],
         ['salesforce-ag-log-viewer.toggleCurrentUserOnly', setLogVisibility],
@@ -123,7 +130,8 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
         ['salesforce-ag-log-viewer.showSearchBox', showSearchBox],
         ['salesforce-ag-log-viewer.clearSearch', clearSearch],
         ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs],
-        // The toggleDebugLogs command is already registered by ApexLogUserDebug.registerCommand
+        ['salesforce-ag-log-viewer.setTraceFlagForUser', setTraceFlagForUser],
+        ['salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent', deleteAllTraceFlagsExceptCurrent]
     ];
 
     const disposables = commands.map(([id, handler]) => 
@@ -135,6 +143,7 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
 
 //Metodo que se llama cuando la extension se desactiva (standard)
 export function deactivate() {
+    stopTraceFlagKeepAlive();
     if (logDataProvider) {
         (logDataProvider as any).dispose();
         logDataProvider = undefined;
@@ -165,8 +174,11 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
 export async function openLog(data: { id: string }) {
     try {
         const provider = await getLogDataProvider();
-        // Query the full log details with type assertion
-        const result = await provider.connection.tooling.retrieve('ApexLog', data.id) as any;
+        // Use retryOnSessionExpire to handle session expiration
+        const result = await retryOnSessionExpire(
+            (conn) => conn.tooling.retrieve('ApexLog', data.id) as Promise<any>,
+            provider
+        );
         if (!result) {
             throw new Error(`Log with ID ${data.id} not found`);
         }

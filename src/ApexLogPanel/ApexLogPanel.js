@@ -12,13 +12,13 @@
 
     // On load, always clear any cached data to ensure only fresh logs are shown
     try {
-        vscode.setState({
-            data: [],
-            columnWidths: Array.from(columnWidths.entries()),
-            sortConfig,
-            readLogIds: Array.from(readLogIds)
-        });
-        lastData = [];
+            vscode.setState({
+                data: [],
+                columnWidths: Array.from(columnWidths.entries()),
+                sortConfig,
+                readLogIds: Array.from(readLogIds)
+            });
+            lastData = [];
     } catch (e) {
         console.error('Failed to clear state on load:', e);
     }
@@ -127,7 +127,8 @@
             if (field === 'time') {
                 aVal = timeToComparableValue(aVal);
                 bVal = timeToComparableValue(bVal);
-                return ascending ? bVal - aVal : aVal - bVal;
+                
+                return ascending ? aVal - bVal : bVal - aVal;
             }
 
             if (field === 'size') {
@@ -446,8 +447,17 @@
             if (searchBar && searchBar.style.display === 'flex') {
                 searchBar.style.display = 'none';
             }
-        }
+    }
     });
+
+    //Para la funcion de búsqueda evitar que se llame mientras se esta escribiendo
+    function debounce(fn, delay) {
+        let timer = null;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
 
     function showInlineSearchBox() {
         const searchBar = document.getElementById('inline-search-bar');
@@ -460,9 +470,11 @@
                 searchBar.style.display = 'flex';
                 input.value = '';
                 input.focus();
-                input.oninput = (e) => {
+                // Use debounce for search
+                const debouncedSearch = debounce(() => {
                     vscode.postMessage({ command: 'inlineSearch', text: input.value });
-                };
+                }, 200);
+                input.oninput = debouncedSearch;
                 input.onkeydown = (e) => {
                     if (e.key === 'Escape') {
                         searchBar.style.display = 'none';
@@ -484,6 +496,14 @@
         }
         if (lastData.length > 0) {
             updateGrid(lastData);
+        }
+    });
+
+    // Listen for Ctrl+F to open the search bar
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+            e.preventDefault();
+            showInlineSearchBox();
         }
     });
 })();

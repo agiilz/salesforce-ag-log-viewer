@@ -1,6 +1,6 @@
 {
   "name": "salesforce-ag-log-viewer",
-  "displayName": "Salesforce AG Log Viewer",
+  "displayName": "Salesforce Logs",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
   "version": "1.1.1",
   "publisher": "aGxLabs",
@@ -23,6 +23,7 @@
     "vscode": "^1.100.0"
   },
   "categories": [
+    "Debuggers",
     "Other"
   ],
   "activationEvents": [
@@ -49,6 +50,17 @@
           "type": "boolean",
           "default": true,
           "description": "Show logs only for the current user"
+        },
+        "salesforceAgLogViewer.traceFlagExpirationInterval": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Default: 15."
+        },
+        "salesforceAgLogViewer.showOutputOnStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Salesforce AG Log Viewer output channel when the extension starts"
         }
       }
     },
@@ -75,51 +87,62 @@
       {
         "command": "salesforce-ag-log-viewer.refreshLogs",
         "title": "Refresh Logs",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "salesforce-ag-log-viewer.openLog",
-        "title": "Open Log",
-        "icon": "$(file)"
+        "icon": "$(refresh)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
-        "title": "Toggle Current User Only",
-        "icon": "$(person)"
+        "title": "Log Visibility",
+        "icon": "$(person)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.deleteAllLogs",
         "title": "Delete All Logs",
-        "icon": "$(trash)"
+        "icon": "$(trash)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.showOptions",
         "title": "Show Options",
-        "icon": "$(gear)"
+        "icon": "$(gear)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.showSearchBox",
         "title": "Search Logs",
-        "icon": "$(search)"
-      },
-      {
-        "command": "salesforce-ag-log-viewer.clearSearch",
-        "title": "Clear Search",
-        "icon": "$(clear-all)"
+        "icon": "$(search)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.toggleAutoRefresh",
         "title": "Toggle Auto Refresh",
-        "icon": "$(sync)"
+        "icon": "$(sync)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
         "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
         "title": "Clear Downloaded Logs",
-        "icon": "$(clear-all)"
+        "icon": "$(clear-all)",
+        "category": "Salesforce AG Log Viewer"
       },
       {
-        "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-        "title": "Show Debug Logs"
+        "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
+        "title": "Set TraceFlag for User",
+        "icon": "$(flag)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
+        "title": "Delete All Trace Flags (Except Current User)",
+        "icon": "$(circle-slash)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.showLogDetails",
+        "title": "Log Details",
+        "icon": "$(list-flat)",
+        "category": "Salesforce AG Log Viewer"
       }
     ],
     "menus": {
@@ -140,34 +163,38 @@
           "group": "navigation@3"
         },
         {
-          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
+          "command": "salesforce-ag-log-viewer.setTraceFlagForUser",
           "when": "view == salesforceLogsView",
           "group": "navigation@4"
         },
         {
-          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
           "when": "view == salesforceLogsView",
           "group": "navigation@5"
         },
         {
-          "command": "salesforce-ag-log-viewer.showOptions",
+          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
           "when": "view == salesforceLogsView",
           "group": "navigation@6"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@7"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.showOptions",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@8"
         }
       ],
       "editor/title": [
         {
-          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-          "title": "Show Debug Logs",
-          "icon": "$(bug)",
+          "command": "salesforce-ag-log-viewer.showLogDetails",
+          "title": "Log Details",
+          "icon": "$(list-flat)",
           "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/",
-          "group": "navigation@1"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "salesforce-ag-log-viewer.toggleDebugLogs",
-          "when": "resourceLangId =~ /log/ || resourceExtname =~ /\\.log/ || resourceFilename =~ /.*07LJW.*/ || resourceFilename =~ /.*\\d{2}-\\d{2}-\\d{4}_\\d{2}-\\d{2}.*/"
+          "group": "navigation@2"
         }
       ]
     }
