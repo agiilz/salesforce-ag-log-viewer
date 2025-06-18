@@ -2,8 +2,7 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
-
-## [1.2]
+## [1.2.0]
 ### Added
 - Added Trace Flag Management functionality
 - New Section for Log Details & USER_DEBUG Filtering 
