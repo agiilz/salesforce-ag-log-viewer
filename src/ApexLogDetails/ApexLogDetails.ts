@@ -36,5 +36,11 @@ export class ApexLogDetails {
         panel.webview.html = html;
         // Enviar logContent directamente tras setear el HTML
         panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
+        // Soporte para recarga: si el webview pide el log, reenviarlo
+        panel.webview.onDidReceiveMessage((msg) => {
+            if (msg && msg.type === 'ready') {
+                panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
+            }
+        });
     }
 }

@@ -1,20 +1,20 @@
-(function() {
-    const vscode = acquireVsCodeApi();
-    let logLines = [];
-    // Constants
-    const BUFFER_SIZE = 100;
-    const ROW_HEIGHT = 22;
-    const COLUMN_WIDTHS = ['17px', '60px', '150px', '30px', 'auto'];
+class ApexLogDetails {
+    constructor() {
+        this.vscode = acquireVsCodeApi();
+        this.logLines = [];
+        this.BUFFER_SIZE = 100;
+        this.ROW_HEIGHT = 22;
+        this.COLUMN_WIDTHS = ['17px', '60px', '150px', '30px', 'auto'];
+        this.virtualState = {
+            allRows: [],
+            collapsedBlocks: new Set(),
+            lastScrollTop: 0
+        };
+        this.searchText = '';
+        this.init();
+    }
 
-    let virtualState = {
-        allRows: [],
-        collapsedBlocks: new Set(),
-        lastScrollTop: 0
-    };
-
-    let searchText = '';
-
-    function parseLogLines(logLines, hideHeapAllocate, onlyUserDebug) {
+    parseLogLines(logLines, hideHeapAllocate, onlyUserDebug) {
         let methodBlockId = 0;
         let methodStack = [];
         const rows = [];
@@ -46,11 +46,11 @@
                 details = details.replace(/^\s*\[\d+\]\s*\|?\s*/, '');
             }
 
-            // Apply filters
+            // Aplicar filtros
             if (hideHeapAllocate && eventType === 'HEAP_ALLOCATE') continue;
             if (onlyUserDebug && eventType !== 'USER_DEBUG') continue;
 
-            // Add row without method block tracking when in debug-only mode
+            // Añadir fila sin seguimiento de bloques de método en modo solo debug
             if (onlyUserDebug) {
                 rows.push({ 
                     idx, 
@@ -64,7 +64,7 @@
                 continue;
             }
 
-            // Handle method blocks only when not in debug-only mode
+            // Manejar bloques de método solo cuando no es modo debug
             if (eventType === 'METHOD_ENTRY') {
                 methodBlockId++;
                 methodStack.push({ id: methodBlockId, start: idx });
@@ -83,42 +83,43 @@
         return { rows };
     }
 
-    function renderTable(hideHeapAllocate, onlyUserDebug) {
+    renderTable(hideHeapAllocate, onlyUserDebug) {
         const container = document.getElementById('log-table-container');
         const viewport = document.getElementById('virtual-viewport');
         if (!container || !viewport) return;
 
-        // Parse data
-        const { rows } = parseLogLines(logLines, hideHeapAllocate, onlyUserDebug);
-        virtualState.allRows = rows;
+        // Parsear datos
+        const { rows } = this.parseLogLines(this.logLines, hideHeapAllocate, onlyUserDebug);
+        this.virtualState.allRows = rows;
 
-        // Set header widths
+        // Establecer anchos de cabecera
         const headers = document.querySelectorAll('#log-table-header th');
         headers.forEach((header, i) => {
-            header.style.width = COLUMN_WIDTHS[i];
-            header.style.minWidth = COLUMN_WIDTHS[i];
+            header.style.width = this.COLUMN_WIDTHS[i];
+            header.style.minWidth = this.COLUMN_WIDTHS[i];
         });
 
-        // Clear content
+        // Limpiar contenido
         const contentContainer = document.getElementById('content-container');
         contentContainer.innerHTML = '';
         
-        // Set container height
-        contentContainer.style.height = `${rows.length * ROW_HEIGHT}px`;
+        // Establecer altura del contenedor
+        contentContainer.style.height = `${rows.length * this.ROW_HEIGHT}px`;
 
-        // Initial render
-        renderVisibleRows();
+        // Renderizado inicial
+        this.renderVisibleRows();
 
-        // Setup scroll handling if not already set
-        viewport.removeEventListener('scroll', handleScroll);
-        viewport.addEventListener('scroll', handleScroll, { passive: true });
+        // Configurar el scroll solo si no está ya configurado
+        viewport.removeEventListener('scroll', this.handleScrollBound);
+        this.handleScrollBound = this.handleScroll.bind(this);
+        viewport.addEventListener('scroll', this.handleScrollBound, { passive: true });
 
         // Actualizar searchText si hay input
         const searchInput = document.getElementById('log-search-input');
-        if (searchInput) searchText = searchInput.value.trim().toLowerCase();
+        if (searchInput) this.searchText = searchInput.value.trim().toLowerCase();
     }
 
-    function renderVisibleRows() {
+    renderVisibleRows() {
         const viewport = document.getElementById('virtual-viewport');
         const container = document.getElementById('content-container');
         if (!viewport || !container) return;
@@ -127,14 +128,14 @@
         const viewportHeight = viewport.clientHeight;
 
         // Filtrar solo las filas visibles (sin huecos)
-        let filteredRows = virtualState.allRows;
-        if (searchText) {
+        let filteredRows = this.virtualState.allRows;
+        if (this.searchText) {
             filteredRows = filteredRows.filter(row => {
                 return (
-                    (row.timestamp && row.timestamp.toLowerCase().includes(searchText)) ||
-                    (row.eventType && row.eventType.toLowerCase().includes(searchText)) ||
-                    (row.lineNumber && row.lineNumber.toLowerCase().includes(searchText)) ||
-                    (row.details && row.details.toLowerCase().includes(searchText))
+                    (row.timestamp && row.timestamp.toLowerCase().includes(this.searchText)) ||
+                    (row.eventType && row.eventType.toLowerCase().includes(this.searchText)) ||
+                    (row.lineNumber && row.lineNumber.toLowerCase().includes(this.searchText)) ||
+                    (row.details && row.details.toLowerCase().includes(this.searchText))
                 );
             });
         }
@@ -170,7 +171,7 @@
                 // Ocultar todo lo demás dentro del bloque colapsado
                 continue;
             }
-            if (row.type === 'entry' && virtualState.collapsedBlocks.has(row.blockId)) {
+            if (row.type === 'entry' && this.virtualState.collapsedBlocks.has(row.blockId)) {
                 // Comenzar a colapsar este bloque
                 visibleRows.push(row);
                 collapseDepth = 1;
@@ -181,17 +182,17 @@
         }
         const totalRows = visibleRows.length;
 
-        // Calcular el rango visible para el virtual scroll
-        const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
+        // Calcular el rango visible para el scroll virtual
+        const startIndex = Math.max(0, Math.floor(scrollTop / this.ROW_HEIGHT) - this.BUFFER_SIZE);
         const endIndex = Math.min(
             totalRows,
-            Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + BUFFER_SIZE
+            Math.ceil((scrollTop + viewportHeight) / this.ROW_HEIGHT) + this.BUFFER_SIZE
         );
 
         // Limpiar contenido
         container.innerHTML = '';
         // Ajustar la altura del contenedor al número real de filas visibles
-        container.style.height = `${totalRows * ROW_HEIGHT}px`;
+        container.style.height = `${totalRows * this.ROW_HEIGHT}px`;
 
         // Crear fragmento para mejor rendimiento
         const fragment = document.createDocumentFragment();
@@ -203,31 +204,31 @@
 
             const rowElement = document.createElement('div');
             rowElement.className = `log-row ${row.type}`;
-            rowElement.style.top = `${i * ROW_HEIGHT}px`;
+            rowElement.style.top = `${i * this.ROW_HEIGHT}px`;
 
-            // Collapse button cell
+            // Celda del botón de colapso
             const collapseCell = document.createElement('div');
             collapseCell.className = 'log-cell';
-            collapseCell.style.width = COLUMN_WIDTHS[0];
+            collapseCell.style.width = this.COLUMN_WIDTHS[0];
             if (row.type === 'entry') {
                 const button = document.createElement('button');
                 button.className = 'collapse-btn';
-                button.textContent = virtualState.collapsedBlocks.has(row.blockId) ? '►' : '▼';
+                button.textContent = this.virtualState.collapsedBlocks.has(row.blockId) ? '►' : '▼';
                 button.onclick = (e) => {
                     e.stopPropagation();
-                    toggleCollapse(row.blockId);
+                    this.toggleCollapse(row.blockId);
                 };
                 collapseCell.appendChild(button);
             }
             rowElement.appendChild(collapseCell);
 
-            // Data cells
+            // Celdas de datos
             [row.timestamp, row.eventType, row.lineNumber, row.details].forEach((text, i) => {
                 const cell = document.createElement('div');
                 cell.className = 'log-cell';
                 cell.textContent = text || '';
-                cell.style.width = COLUMN_WIDTHS[i + 1];
-                if (i === 3) cell.style.flex = '1'; // Make details column flexible
+                cell.style.width = this.COLUMN_WIDTHS[i + 1];
+                if (i === 3) cell.style.flex = '1'; // Hacer la columna de detalles flexible
                 rowElement.appendChild(cell);
             });
 
@@ -237,36 +238,34 @@
         container.appendChild(fragment);
     }
 
-    function toggleCollapse(blockId) {
-        if (virtualState.collapsedBlocks.has(blockId)) {
-            virtualState.collapsedBlocks.delete(blockId);
+    toggleCollapse(blockId) {
+        if (this.virtualState.collapsedBlocks.has(blockId)) {
+            this.virtualState.collapsedBlocks.delete(blockId);
         } else {
-            virtualState.collapsedBlocks.add(blockId);
+            this.virtualState.collapsedBlocks.add(blockId);
         }
-        renderVisibleRows();
+        this.renderVisibleRows();
     }
 
-    function handleScroll() {
-        requestAnimationFrame(renderVisibleRows);
+    handleScroll() {
+        requestAnimationFrame(() => this.renderVisibleRows());
     }
 
-    // Event handlers
-    window.addEventListener('message', event => {
+    handleMessage(event) {
         const data = event.data;
         if (!data.logContent) return;
-        
-        logLines = data.logContent.split(/\r?\n/).filter(l => l.trim().length > 0);
-        renderTable(
+        this.logLines = data.logContent.split(/\r?\n/).filter(l => l.trim().length > 0);
+        this.renderTable(
             document.getElementById('hide-heap-allocate').checked,
             document.getElementById('only-user-debug').checked
         );
-    });
+    }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        vscode.postMessage({ type: 'ready' });
+    handleDOMContentLoaded() {
+        this.vscode.postMessage({ type: 'ready' });
         ['hide-heap-allocate', 'only-user-debug'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
-                renderTable(
+                this.renderTable(
                     document.getElementById('hide-heap-allocate').checked,
                     document.getElementById('only-user-debug').checked
                 );
@@ -275,9 +274,17 @@
         const searchInput = document.getElementById('log-search-input');
         if (searchInput) {
             searchInput.addEventListener('input', () => {
-                searchText = searchInput.value.trim().toLowerCase();
-                renderVisibleRows();
+                this.searchText = searchInput.value.trim().toLowerCase();
+                this.renderVisibleRows();
             });
         }
-    });
-})();
+    }
+
+    init() {
+        window.addEventListener('message', this.handleMessage.bind(this));
+        document.addEventListener('DOMContentLoaded', this.handleDOMContentLoaded.bind(this));
+    }
+}
+
+// Inicializar visor
+new ApexLogDetails();
