@@ -2,11 +2,6 @@
 
 A Visual Studio Code extension for viewing and managing Salesforce debug logs with advanced features like auto-refresh, filtering, and improved readability. 
 
-Preview:
-![image](https://github.com/user-attachments/assets/73e03bac-09c0-4f5b-9e97-be263e9587df)
-
-
-
 ## Features
 
 ### 📊 Interactive Log Viewer
@@ -17,11 +12,15 @@ Preview:
 - Opening and downloading logs from your Salesforce Org
 - Option to clear all debug logs from your org
 
+![image](https://github.com/user-attachments/assets/73e03bac-09c0-4f5b-9e97-be263e9587df)
+
 ### 🔍 Advanced Log Analysis
 - Filter logs by current user or view logs from all users
 - Quick button to show only USER_DEBUG statements 
 - Intelligent line number preservation when switching views between USER_DEBUG statements or all log.
 - Size-optimized display (KB/MB) and duration formatting (ms/s)
+  
+![Captura de pantalla 2025-06-18 112620](https://github.com/user-attachments/assets/716e1df9-3786-4f35-bd4e-c2db7ba09d38)
 
 ### ⚡ Performance Features
 - Efficient log caching to avoid redundant downloads
@@ -33,6 +32,10 @@ Preview:
 - Customizable auto-refresh interval
 - Current user only/all users toggle
 - Customizable refresh intervals
+
+Extension Preview:
+![Captura de pantalla 2025-06-18 180744](https://github.com/user-attachments/assets/5b0bbb9e-c548-4065-96b2-5c508f968a93)
+
 
 ## Requirements
 
@@ -53,6 +56,7 @@ Preview:
 1. Connect to your Salesforce org through VS Code
 2. Open the Salesforce AG Log Viewer panel from the Activity Bar
 3. Your debug logs will automatically appear in the viewer
+4. Click the button "Log Details" in the top right corner
 
 
 ### Visual Indicators
