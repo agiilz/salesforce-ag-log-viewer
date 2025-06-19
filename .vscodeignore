@@ -8,7 +8,7 @@ src/**/*.test.*
 src/**/*.spec.*
 
 # Only include built webview assets and used images
-!src/images/agLogViewer_logo.png
+!src/images/extension_logo.png
 !src/images/agxLabs_logov2.png
 !src/ApexLogPanel/ApexLogPanel.html
 !src/ApexLogPanel/ApexLogPanel.css

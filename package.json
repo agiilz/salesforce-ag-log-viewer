@@ -30,7 +30,7 @@
     "onView:salesforceLogsView"
   ],
   "main": "./out/extension.js",
-  "icon": "src/images/agLogViewer_logo.png",
+  "icon": "src/images/extension_logo.png",
   "contributes": {
     "configuration": {
       "title": "Salesforce AG Log Viewer",
