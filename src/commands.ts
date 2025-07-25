@@ -56,7 +56,7 @@ export async function deleteAllLogs() {
         return;
     }
 
-    vscode.window.withProgress({
+    await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Deleting Salesforce logs...",
         cancellable: false
@@ -66,59 +66,58 @@ export async function deleteAllLogs() {
             const connection = provider.connection;
 
             progress.report({ message: "Querying log IDs..." });
-            const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog'), provider) as { records: { Id: string }[] };
-            
+            const result = await retryOnSessionExpire(
+                async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog LIMIT 10000'),
+                provider
+            ) as { records: { Id: string }[] };
+
             if (!result.records || result.records.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
-                // Force refresh and update grid to empty
-                //await provider.refreshLogs();
                 provider.notifyDataChange();
                 return;
             }
 
             const logIds = result.records.map(record => record.Id);
-            const totalLogs = logIds.length;
-            progress.report({ message: `Found ${totalLogs} logs. Deleting...` });
-
             const chunkSize = 200;
-            //TODO:   Promise.allSettled for parallel delete if API allows
+            let deletedCount = 0;
+
             for (let i = 0; i < logIds.length; i += chunkSize) {
                 const chunk = logIds.slice(i, i + chunkSize);
-                progress.report({ 
-                    message: `Deleting logs ${i + 1}-${Math.min(i + chunkSize, totalLogs)} of ${totalLogs}...`, 
-                    increment: (chunk.length / totalLogs) * 100 
+                progress.report({
+                    message: `Deleting logs ${i + 1}-${Math.min(i + chunkSize, logIds.length)} of ${logIds.length}...`
                 });
-                await retryOnSessionExpire(async (conn) => await conn.tooling.destroy('ApexLog', chunk), provider);
+
+                try {
+                    await Promise.all(chunk.map(id =>
+                        connection.request({
+                            method: 'DELETE',
+                            url: `/services/data/v58.0/sobjects/ApexLog/${id}`
+                        }).then(() => {
+                            deletedCount++;
+                        }).catch(err => {
+                            if (!/entity is deleted|not found|resource does not exist/i.test(err?.message || '')) {
+                                throw err;
+                            }
+                        })
+                    ));
+                } catch (err: any) {
+                    console.error('Delete chunk error:', err);
+                    throw new Error(`Error deleting log chunk: ${err.message || err}`);
+                }
             }
 
-            vscode.window.showInformationMessage(`Successfully deleted ${totalLogs} logs.`);
+            vscode.window.showInformationMessage(`Successfully deleted ${deletedCount} logs.`);
             await provider.refreshLogs();
             provider.notifyDataChange();
-            
-            /* TODO: Uncomment if you want to clear the local downloaded logs cache
-
-            // Also clear the local downloaded logs cache to avoid VS Code showing new logs as deleted
-            await provider.logViewer.clearDownloadedLogs();
-
-
-            // Close all open editors for files in the .logs directory to avoid showing deleted files
-            const logsPath = provider.logViewer.logsPath;
-            if (logsPath) {
-                const openEditors = vscode.window.visibleTextEditors;
-                for (const editor of openEditors) {
-                    if (editor.document.uri.fsPath.startsWith(logsPath)) {
-                        //await vscode.window.showTextDocument(editor.document, { preview: false });
-                        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-                    }
-                }
-            }*/
 
         } catch (error: any) {
             const errorMessage = error?.message || 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
+            console.error('Delete all logs failed:', error);
         }
     });
 }
+
 
 //Metodo para activar el autorefresco de logs en el panel
 export async function toggleAutoRefresh() {
