@@ -90,7 +90,7 @@ export class LogDataProvider implements vscode.Disposable {
             return;
         }
         this.isRefreshing = true;
-        outputChannel.appendLine('Refreshing logs...');
+        //outputChannel.appendLine('Refreshing logs...');
         
         //Contruccion de la query para obtener los ApexLogs
         // Si currentUserOnly está activado, se filtra por el ID del usuario actual

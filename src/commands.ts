@@ -101,7 +101,6 @@ export async function deleteAllLogs() {
                         })
                     ));
                 } catch (err: any) {
-                    console.error('Delete chunk error:', err);
                     throw new Error(`Error deleting log chunk: ${err.message || err}`);
                 }
             }
@@ -113,7 +112,6 @@ export async function deleteAllLogs() {
         } catch (error: any) {
             const errorMessage = error?.message || 'Unknown error occurred';
             vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
-            console.error('Delete all logs failed:', error);
         }
     });
 }
