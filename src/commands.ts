@@ -311,10 +311,10 @@ export async function setTraceFlagForUser() {
         const currentUserId = await provider.getCurrentUserId();
         
         // Query all active users except current user
-        const userResult = await connection.query<any>(
-            `SELECT Id, Name, Username FROM User WHERE IsActive = true AND Id != '${currentUserId}' ORDER BY Name`
-        );
-        if (!userResult.records || userResult.records.length === 0) {
+        const userQuery = `SELECT Id, Name, Username FROM User WHERE IsActive = true AND Id != '${currentUserId}' ORDER BY Name`;
+        const users = await queryAllUsers(connection, userQuery);
+
+        if (!users || users.length === 0) {
             vscode.window.showWarningMessage('No active users found in the org.');
             return;
         }
@@ -325,7 +325,7 @@ export async function setTraceFlagForUser() {
         for (const tf of traceFlagResult.records || []) {
             userIdToTraceFlag.set(tf.TracedEntityId, tf.Id);
         }
-        const items = userResult.records.map((user: any) => {
+        const items = users.map((user: any) => {
             const hasFlag = userIdToTraceFlag.has(user.Id);
             const icon = hasFlag ? '✅' : '❌';
             return {
@@ -352,6 +352,19 @@ export async function setTraceFlagForUser() {
         const errorMessage = error?.message || 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to manage trace flag for user: ${errorMessage}`);
     }
+}
+
+async function queryAllUsers(connection: any, soql: string) {
+    let records: any[] = [];
+    let result = await connection.query(soql);
+    records.push(...result.records);
+
+    while (!result.done) {
+        result = await connection.queryMore(result.nextRecordsUrl);
+        records.push(...result.records);
+    }
+
+    return records;
 }
 
 // Command to delete all trace flags except the current user's
