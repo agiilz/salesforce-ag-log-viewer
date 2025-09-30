@@ -2,7 +2,7 @@
   "name": "salesforce-ag-log-viewer",
   "displayName": "Salesforce Logs",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "publisher": "aGxLabs",
   "author": {
     "name": "Adrià Gil"

@@ -2,6 +2,10 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.3]
+### Changed
+- Fix queryMore all users in the set flag options
+
 ## [1.2.2]
 ### Changed
 - Fix Delete all logs button
