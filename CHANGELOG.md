@@ -2,6 +2,14 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.4]
+### Changed
+Fixed:
+- Fix: Error handling and error screen to avoid extension crash
+- Fix: Log rendering issues and corrupted file handling
+- Fix: Row color display
+- Improvement: Enhanced Apex Log Details UI
+
 ## [1.2.3]
 ### Changed
 - Fix queryMore all users in the set flag options

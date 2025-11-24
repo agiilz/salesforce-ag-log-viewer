@@ -4,7 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { openLog } from '../extension';
 
-export class ApexLogPanelProvider implements vscode.WebviewViewProvider {
+import { IApexLogPanelProvider } from './IApexLogPanelProvider';
+
+export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLogPanelProvider {
     private _view?: vscode.WebviewView;
     private readonly _logDataProvider: LogDataProvider;
 
@@ -13,7 +15,7 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider {
         logDataProvider: LogDataProvider
     ) {
         this._logDataProvider = logDataProvider;
-    }    public async refresh(): Promise<void> {
+    } public async refresh(): Promise<void> {
         if (this._logDataProvider) {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
@@ -23,7 +25,7 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider {
                 await this._logDataProvider.refreshLogs(false, true);
             });
         }
-    }public postMessage(message: any) {
+    } public postMessage(message: any) {
         if (this._view) {
             this._view.webview.postMessage(message);
         }
@@ -31,14 +33,22 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider {
 
     public showSearchBoxInWebview() {
         this.postMessage({ type: 'showSearchBox' });
-    }    public updateView(data?: any[], isAutoRefresh: boolean = false) {
+    }
+
+    /**
+     * Update the panel view. If errorInfo is provided, send it to the webview for fallback UI.
+     */
+    public updateView(data?: any[], isAutoRefresh: boolean = false, errorInfo?: { hasError: boolean, message?: string }) {
         const gridData = data || this._logDataProvider?.getGridData();
-        this.postMessage({ 
+        this.postMessage({
             type: 'updateData',
             data: gridData,
-            isAutoRefresh: isAutoRefresh
+            isAutoRefresh: isAutoRefresh,
+            errorInfo: errorInfo || null
         });
-    }public resolveWebviewView(
+    }
+
+    public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
@@ -73,21 +83,38 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.css')
         );
 
-        webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);        webviewView.webview.onDidReceiveMessage(async (message) => {
+        webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);
+        webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'ready') {
-                let initialData = this._logDataProvider?.getGridData();
-                
-                // If no data available, force a refresh
-                if (!initialData || initialData.length === 0) {
-                    await this._logDataProvider.refreshLogs(true, false);
+                let initialData: any[] = [];
+                let errorInfo: { hasError: boolean, message?: string } | null = null;
+                try {
                     initialData = this._logDataProvider?.getGridData();
+                    // If no data available, force a refresh
+                    if (!initialData || initialData.length === 0) {
+                        await this._logDataProvider.refreshLogs(true, false);
+                        initialData = this._logDataProvider?.getGridData();
+                    }
+                } catch (err: any) {
+                    // Detect common error causes
+                    errorInfo = { hasError: true, message: err?.message || 'Unknown error' };
                 }
-                
-                this.updateView(initialData, false);
+                // If gridData is empty and errorInfo is set, show fallback
+                this.updateView(initialData, false, errorInfo || undefined);
             } else if (message.command === 'openLog') {
-                await openLog({ id: message.log.id });
+                try {
+                    await openLog({ id: message.log.id });
+                } catch (err: any) {
+                    // If log open fails, show error fallback
+                    this.updateView([], false, { hasError: true, message: err?.message || 'Failed to open log.' });
+                }
             } else if (message.command === 'inlineSearch') {
-                this._logDataProvider?.setSearchFilter(message.text);
+                try {
+                    this._logDataProvider?.setSearchFilter(message.text);
+                    this.updateView();
+                } catch (err: any) {
+                    this.updateView([], false, { hasError: true, message: err?.message || 'Search failed.' });
+                }
             }
         });
     }

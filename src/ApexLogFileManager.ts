@@ -3,13 +3,18 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 import { ApexLog } from './ApexLogWrapper';
 import { outputChannel } from './extension';
+import { IApexLogPanelProvider } from './ApexLogPanel/IApexLogPanelProvider';
 
 export class ApexLogFileManager {
 
     constructor(
         private readonly storagePath?: string,
-        private readonly activeProvider?: any
-    ) {}
+        private activeProvider?: IApexLogPanelProvider
+    ) { }
+
+    public setProvider(provider: IApexLogPanelProvider) {
+        this.activeProvider = provider;
+    }
 
     public get logsPath(): string | undefined {
         return this.storagePath ? path.resolve(this.storagePath, '.logs') : undefined;
@@ -23,7 +28,7 @@ export class ApexLogFileManager {
         //Formateamos la fecha a--> 05-22-2025_15-30-00
         const formatted =
             `${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${d.getFullYear()}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-        
+
         return `${formatted}_${log.id}.log`;
     }
 
@@ -37,17 +42,38 @@ export class ApexLogFileManager {
     public async showLog(log: ApexLog): Promise<void> {
         const logPath = this.getLogPath(log);
         let fileExists = false;
+        let errorInfo: { hasError: boolean, message?: string } | undefined = undefined;
 
         if (logPath) {
-            fileExists = await fs.pathExists(logPath);
+            try {
+                fileExists = await fs.pathExists(logPath);
+            } catch (fsErr) {
+                outputChannel.appendLine(`File system error: ${fsErr}`);
+                const errorMessage = fsErr instanceof Error ? fsErr.message : String(fsErr);
+                errorInfo = { hasError: true, message: 'File system error: ' + errorMessage };
+                if (this.activeProvider?.updateView) {
+                    this.activeProvider.updateView([], false, errorInfo);
+                }
+                return;
+            }
             if (fileExists) {
                 //Si el fichero existe localmente, se abre en el editor
-                outputChannel.appendLine(`Opening cached log: ${logPath}`);
-                const document = await vscode.workspace.openTextDocument(logPath);
-                await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
-                await vscode.window.showTextDocument(document, { preview: false });
-                this.notifyLogDownloaded(log.id);
-                return;
+                try {
+                    outputChannel.appendLine(`Opening cached log: ${logPath}`);
+                    const document = await vscode.workspace.openTextDocument(logPath);
+                    await vscode.languages.setTextDocumentLanguage(document, 'log');
+                    await vscode.window.showTextDocument(document, { preview: false });
+                    this.notifyLogDownloaded(log.id);
+                    return;
+                } catch (openErr) {
+                    outputChannel.appendLine(`Error opening cached log: ${openErr}`);
+                    const errorMessage = openErr instanceof Error ? openErr.message : String(openErr);
+                    errorInfo = { hasError: true, message: 'Error opening cached log: ' + errorMessage };
+                    if (this.activeProvider?.updateView) {
+                        this.activeProvider.updateView([], false, errorInfo);
+                    }
+                    return;
+                }
             }
 
             //Si el fichero ha sido borrado (por el boton de borrar logs localmente) 
@@ -68,25 +94,29 @@ export class ApexLogFileManager {
             const fileName = this.getLogFileName(log);
             outputChannel.appendLine('Processing and saving log...');
             await this.openLog(logBody, fileName);
-            
+
             //Refresco del explorador de archivos del VsCode para que aparezca el nuevo log
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
             outputChannel.appendLine('Log downloaded and opened successfully');
-            
+
             //Enviar notificacion al WebView de que el log ha sido descargado
             this.notifyLogDownloaded(log.id);
         } catch (error) {
             outputChannel.appendLine(`Error downloading log: ${error instanceof Error ? error.message : String(error)}`);
-            throw error;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            errorInfo = { hasError: true, message: 'Error downloading log: ' + errorMessage };
+            if (this.activeProvider?.updateView) {
+                this.activeProvider.updateView([], false, errorInfo);
+            }
         }
     }
 
     //Notificar al WebView que el log ha sido descargado
     private notifyLogDownloaded(logId: string) {
         if (this.activeProvider?.postMessage) {
-            this.activeProvider.postMessage({ 
+            this.activeProvider.postMessage({
                 type: 'logDownloaded',
-                logId: logId 
+                logId: logId
             });
         }
     }
@@ -106,7 +136,7 @@ export class ApexLogFileManager {
             //Si no existe la ruta de logs, se crea un nuevo documento temporal y se abre en el editor
             document = await vscode.workspace.openTextDocument({ content: logBody });
         }
-        await vscode.languages.setTextDocumentLanguage(document, 'apexlog');
+        await vscode.languages.setTextDocumentLanguage(document, 'log');
         await vscode.window.showTextDocument(document, { preview: false });
     }
 
@@ -114,7 +144,7 @@ export class ApexLogFileManager {
     public async clearDownloadedLogs(): Promise<void> {
         if (this.logsPath && await fs.pathExists(this.logsPath)) {
             await fs.emptyDir(this.logsPath);
-            
+
             //Cerrar todas las tabs que coincidan con los logs locales borrados
             //TODO: meter que sea una setting opcional
             for (const group of vscode.window.tabGroups.all) {
@@ -122,7 +152,7 @@ export class ApexLogFileManager {
                     if (
                         tab.input && typeof tab.input === 'object' && tab.input !== null && 'uri' in tab.input &&
                         (tab.input as any).uri.fsPath.startsWith(this.logsPath)
-                    ){
+                    ) {
                         await vscode.window.tabGroups.close(tab);
                     }
                 }

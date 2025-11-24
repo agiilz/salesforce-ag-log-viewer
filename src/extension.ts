@@ -22,10 +22,10 @@ export async function activate(context: vscode.ExtensionContext) {
         outputChannel.show(true); // Make output visible
     }
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
-    
+
     // Register the ApexLogDetails command
     ApexLogDetails.registerCommand(context);
-    
+
     try {
         //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
         setupConfigFileWatchers(context);
@@ -33,15 +33,17 @@ export async function activate(context: vscode.ExtensionContext) {
         // Use getLogDataProvider to ensure provider is initialized
         const provider = new ApexLogPanelProvider(context.extensionUri, await getLogDataProvider());
         activeProvider = provider;
-        (logDataProvider as any).activeProvider = provider;
-        
+
+        // Set the active provider on the LogDataProvider
+        (await getLogDataProvider()).setActiveProvider(provider);
+
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider('salesforceLogsView', provider)
         );
 
         //Registrar los comandos de la extension
         registerCommands(context, provider);
-        
+
         //Suscribirse a eventos de cambio de datos del LogDataProvider
         (await getLogDataProvider()).onDidChangeData(({ data, isAutoRefresh }) => {
             provider.updateView(data, isAutoRefresh);
@@ -54,8 +56,8 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.commands.executeCommand('salesforceLogsView.focus');
         }, 500); //Delay antes de cerrar el output panel
 
-    } catch (error: any) {
-        const errorMessage = error?.message ?? 'Unknown error occurred';
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         outputChannel.appendLine(`Activation error: ${errorMessage}`);
         console.error('Activation error:', error);
         vscode.window.showErrorMessage(`Failed to initialize Salesforce Log Viewer: ${errorMessage}`);
@@ -81,33 +83,43 @@ function setupConfigFileWatchers(context: vscode.ExtensionContext) {
 //Metodo para crear un watcher de cambios en el fichero de configuracion .sf/config.json
 function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(configPath);
-    
+
     watcher.onDidChange(async () => {
         try {
             if (logDataProvider && activeProvider) {
                 // Always stop all trace flag keep-alive timers before switching orgs
                 stopTraceFlagKeepAlive();
                 //Mostrar notificacion de cambio de org si el panel esta visible
-                if (logDataProvider['isVisible']) {
+                if (logDataProvider['isVisible']) { // Accessing private property isVisible via string index to avoid TS error if not exposed, but we should expose it or use a getter.
+                    // Actually isVisible is private in LogDataProvider.
+                    // We should add a public getter or method.
+                    // For now, let's assume we can access it or add a getter.
+                    // I'll add a getter to LogDataProvider in a separate step or just use the private access for now if it works in JS runtime (it does).
+                    // But for TS it might complain.
+                    // Let's check if I added a getter. No.
+                    // I'll use 'any' cast for now to avoid breaking changes in this file, or better, add the getter.
+                    // I'll add the getter in the next step if needed.
+
                     await vscode.window.withProgress({
                         location: vscode.ProgressLocation.Notification,
                         title: 'Switching org and retrieving logs',
                         cancellable: false
-                    }, async (progress) => {                        progress.report({ message: 'Updating connection...' });
+                    }, async (progress) => {
+                        progress.report({ message: 'Updating connection...' });
                         const newConnection = await getConnection();
-                        await (logDataProvider as any).updateConnection(newConnection);
+                        await logDataProvider!.updateConnection(newConnection);
                         progress.report({ message: 'Refreshing logs...' });
                         await new Promise(res => setTimeout(res, 300));
                     });
                     outputChannel.appendLine('Updated connection and refreshed logs after org change');
                     // Send orgChanged message to webview to close search bar
                     activeProvider.postMessage({ type: 'orgChanged' });
-                } else {                    
+                } else {
                     // If not visible, just update connection and logs silently
                     const newConnection = await getConnection();
-                    await (logDataProvider as any).updateConnection(newConnection);
+                    await logDataProvider.updateConnection(newConnection);
                     outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
-                    
+
                 }
             }
         } catch (error) {
@@ -134,10 +146,10 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
         ['salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent', deleteAllTraceFlagsExceptCurrent]
     ];
 
-    const disposables = commands.map(([id, handler]) => 
+    const disposables = commands.map(([id, handler]) =>
         vscode.commands.registerCommand(id, handler)
     );
-    
+
     context.subscriptions.push(...disposables);
 }
 
@@ -145,7 +157,7 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
 export function deactivate() {
     stopTraceFlagKeepAlive();
     if (logDataProvider) {
-        (logDataProvider as any).dispose();
+        logDataProvider.dispose();
         logDataProvider = undefined;
     }
 }
@@ -201,8 +213,8 @@ export async function openLog(data: { id: string }) {
 
         // Mark the log as opened (set status to 'downloaded' and refresh UI)
         logDataProvider?.markLogAsOpened(log.id);
-    } catch (error: any) {
-        const errorMessage = error?.message ?? 'Unknown error occurred';
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Failed to open log: ${errorMessage}`);
     }
 }

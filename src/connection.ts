@@ -17,14 +17,14 @@ export async function getConnection(): Promise<Connection> {
 
     //Si la org ha cambiado, crea una nueva conexion
     if (!currentConnection || currentOrgUsername !== newOrgUsername) {
-        try{
+        try {
             await createConnection(newOrgUsername);
-        }catch (error: any) {
-            const errorMessage = error?.message || 'Unknown error occurred';
+        } catch (error: any) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to connect to Salesforce: ${errorMessage}`);
             throw error;
         }
-        
+
     }
 
     return currentConnection!;
@@ -32,7 +32,7 @@ export async function getConnection(): Promise<Connection> {
 
 //Metodo para crear una nueva conexion a la org de Salesforce
 async function createConnection(newOrgUsername: string): Promise<void> {
-    
+
     outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
     currentOrgUsername = newOrgUsername;
 
@@ -52,7 +52,7 @@ async function createConnection(newOrgUsername: string): Promise<void> {
 
 //Metodo para obtener la org actual desde el fichero de configuracion .sf/config.json
 export async function getCurrentOrgFromConfig(): Promise<string | undefined> {
-   
+
     //Obtener la configuracion del workspace actual (proyecto)
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (workspaceRoot) {
@@ -111,7 +111,7 @@ export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Pr
     try {
         return await fn(connection);
     } catch (error: any) {
-        const msg = error?.message || error?.toString() || '';
+        const msg = error instanceof Error ? error.message : String(error);
         if (msg.includes('INVALID_SESSION_ID') || msg.includes('Session expired') || msg.includes('expired access token')) {
             outputChannel.appendLine('Session expired, attempting to reconnect...');
             const newConnection = await getConnection();

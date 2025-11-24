@@ -1,4 +1,4 @@
-(function() {
+(function () {
     const vscode = acquireVsCodeApi();
     let lastData = [];
     let columnWidths = new Map();
@@ -12,13 +12,13 @@
 
     // On load, always clear any cached data to ensure only fresh logs are shown
     try {
-            vscode.setState({
-                data: [],
-                columnWidths: Array.from(columnWidths.entries()),
-                sortConfig,
-                readLogIds: Array.from(readLogIds)
-            });
-            lastData = [];
+        vscode.setState({
+            data: [],
+            columnWidths: Array.from(columnWidths.entries()),
+            sortConfig,
+            readLogIds: Array.from(readLogIds)
+        });
+        lastData = [];
     } catch (e) {
         console.error('Failed to clear state on load:', e);
     }
@@ -67,7 +67,7 @@
             cell.style.width = `${width}px`;
             cell.style.flex = `0 0 ${width}px`;
         });
-        
+
         saveState();
     }
 
@@ -79,7 +79,7 @@
             if (existingHandle) {
                 existingHandle.remove();
             }
-            
+
             // Create new resize handle
             const handle = document.createElement('div');
             handle.className = 'resize-handle';
@@ -88,7 +88,7 @@
 
             // Remove existing click handlers
             cell.removeEventListener('click', cell.sortHandler);
-            
+
             // Add new click handler for sorting
             cell.sortHandler = (e) => {
                 if (e.target === cell) {
@@ -127,7 +127,7 @@
             if (field === 'time') {
                 aVal = timeToComparableValue(aVal);
                 bVal = timeToComparableValue(bVal);
-                
+
                 return ascending ? aVal - bVal : bVal - aVal;
             }
 
@@ -165,8 +165,8 @@
 
             aVal = String(aVal || '').toLowerCase();
             bVal = String(bVal || '').toLowerCase();
-            return ascending ? 
-                aVal.localeCompare(bVal) : 
+            return ascending ?
+                aVal.localeCompare(bVal) :
                 bVal.localeCompare(aVal);
         });
     }
@@ -212,7 +212,7 @@
         startX = e.pageX;
         startWidth = cell.offsetWidth;
         activeResizeHandle = handle;
-        
+
         document.body.classList.add('resizing');
         handle.style.backgroundColor = 'var(--vscode-focusBorder)';
 
@@ -222,21 +222,21 @@
 
     function resize(e) {
         if (!resizingColumn) return;
-        
+
         const width = Math.max(50, startWidth + (e.pageX - startX));
         const field = resizingColumn.dataset.field;
-        
+
         resizingColumn.style.width = `${width}px`;
         resizingColumn.style.flex = `0 0 ${width}px`;
-        
+
         const bodyCells = document.querySelectorAll(`#grid-body .grid-cell[data-field="${field}"]`);
         bodyCells.forEach(cell => {
             cell.style.width = `${width}px`;
             cell.style.flex = `0 0 ${width}px`;
-            
+
             delete cell.dataset.truncated;
             cell.removeAttribute('title');
-            
+
             const content = cell.textContent;
             const tempSpan = document.createElement('span');
             tempSpan.style.visibility = 'hidden';
@@ -244,37 +244,112 @@
             tempSpan.style.whiteSpace = 'nowrap';
             tempSpan.textContent = content;
             document.body.appendChild(tempSpan);
-            
+
             const contentWidth = tempSpan.offsetWidth;
             document.body.removeChild(tempSpan);
-            
+
             const availableWidth = width - 12;
-            
+
             if (contentWidth > availableWidth) {
                 cell.dataset.truncated = 'true';
                 cell.title = content;
             }
         });
-        
+
         columnWidths.set(field, width);
         saveState();
     }
 
     function stopResize() {
         if (!resizingColumn || !activeResizeHandle) return;
-        
+
+        saveState();
+    }
+
+    function resize(e) {
+        if (!resizingColumn) return;
+
+        const width = Math.max(50, startWidth + (e.pageX - startX));
+        const field = resizingColumn.dataset.field;
+
+        resizingColumn.style.width = `${width}px`;
+        resizingColumn.style.flex = `0 0 ${width}px`;
+
+        const bodyCells = document.querySelectorAll(`#grid-body .grid-cell[data-field="${field}"]`);
+        bodyCells.forEach(cell => {
+            cell.style.width = `${width}px`;
+            cell.style.flex = `0 0 ${width}px`;
+
+            delete cell.dataset.truncated;
+            cell.removeAttribute('title');
+
+            const content = cell.textContent;
+            const tempSpan = document.createElement('span');
+            tempSpan.style.visibility = 'hidden';
+            tempSpan.style.position = 'absolute';
+            tempSpan.style.whiteSpace = 'nowrap';
+            tempSpan.textContent = content;
+            document.body.appendChild(tempSpan);
+
+            const contentWidth = tempSpan.offsetWidth;
+            document.body.removeChild(tempSpan);
+
+            const availableWidth = width - 12;
+
+            if (contentWidth > availableWidth) {
+                cell.dataset.truncated = 'true';
+                cell.title = content;
+            }
+        });
+
+        columnWidths.set(field, width);
+        saveState();
+    }
+
+    function stopResize() {
+        if (!resizingColumn || !activeResizeHandle) return;
+
         document.body.classList.remove('resizing');
         activeResizeHandle.style.backgroundColor = '';
         resizingColumn = null;
         activeResizeHandle = null;
-        
+
         document.removeEventListener('mousemove', resize);
         document.removeEventListener('mouseup', stopResize);
-        
+
         saveState();
     }
 
-    function updateGrid(data) {
+    function updateGrid(data, errorInfo) {
+        const gridBody = document.getElementById('grid-body');
+        if (!gridBody) {
+            console.error('Grid body element not found');
+            return;
+        }
+
+        // Capture scroll position before clearing
+        const scrollTop = gridBody.scrollTop;
+        gridBody.innerHTML = '';
+
+        if (errorInfo && errorInfo.hasError) {
+            // Show error fallback UI
+            console.log('Fallback error UI triggered:', errorInfo);
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'empty-message';
+            errorMsg.style.color = 'var(--vscode-editorError-foreground, #f14c4c)';
+            errorMsg.style.fontSize = '1.3em';
+            errorMsg.style.fontWeight = 'bold';
+            errorMsg.style.background = 'var(--vscode-editor-background, #fff0f0)';
+            errorMsg.style.border = '2px solid var(--vscode-editorError-foreground, #f14c4c)';
+            errorMsg.style.borderRadius = '8px';
+            errorMsg.style.margin = '32px auto';
+            errorMsg.style.maxWidth = '500px';
+            errorMsg.style.padding = '24px';
+            errorMsg.innerHTML = `<b>Something went wrong.</b><br><span style='color:var(--vscode-descriptionForeground);font-size:1em;'>Check the output channel for details.<br>To retry, please click the <b>Refresh</b> button.</span>`;
+            gridBody.appendChild(errorMsg);
+            return;
+        }
+
         if (!isInitialized) {
             initializeColumnWidths();
             initializeResizeHandles();
@@ -295,14 +370,6 @@
         });
 
         lastData = data;
-        const gridBody = document.getElementById('grid-body');
-        if (!gridBody) {
-            console.error('Grid body element not found');
-            return;
-        }
-
-        const scrollTop = gridBody.scrollTop;
-        gridBody.innerHTML = '';
 
         // If no data, show empty message and clear cache
         if (!data || data.length === 0) {
@@ -337,31 +404,37 @@
         });
 
         gridBody.appendChild(fragment);
-        gridBody.scrollTop = scrollTop;
+
+        // Restore scroll position
+        if (scrollTop > 0) {
+            gridBody.scrollTop = scrollTop;
+        }
+
         saveState();
     }
 
     function createRow(rowData, previousState = null) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'grid-row';
-        
+
         // Set initial states based on previous state, readLogIds, or uiStatus
         let isRead = previousState ? previousState.read : (rowData.uiStatus === 'downloaded' || readLogIds.has(rowData.id));
-        rowDiv.dataset.read = isRead.toString();
+
         // If the log is downloaded, ensure downloading is false and remove any success/green state
         if (rowData.uiStatus === 'downloaded') {
             rowDiv.dataset.downloading = 'false';
             rowDiv.dataset.read = 'true';
-            if ('success' in rowDiv.dataset) delete rowDiv.dataset.success;
+            isRead = true;
         } else {
             rowDiv.dataset.downloading = previousState ? previousState.downloading.toString() : 'false';
+            rowDiv.dataset.read = isRead.toString();
         }
 
         const idCell = document.createElement('div');
         idCell.style.display = 'none';
         idCell.dataset.logId = rowData.id;
         rowDiv.appendChild(idCell);
-        
+
         rowDiv.onclick = () => {
             document.querySelectorAll('.grid-row.selected').forEach(row => {
                 if (row !== rowDiv) {
@@ -370,13 +443,13 @@
             });
             rowDiv.classList.add('selected');
             rowDiv.dataset.downloading = 'true';
-            
+
             vscode.postMessage({
                 command: 'openLog',
                 log: { id: rowData.id }
             });
         };
-        
+
         const fields = ['user', 'time', 'status', 'size', 'operation', 'duration'];
         fields.forEach(field => {
             const cell = document.createElement('div');
@@ -416,18 +489,18 @@
                     }
                 }
             }
-            
+
             rowDiv.appendChild(cell);
         });
-        
+
         return rowDiv;
     }
 
     window.addEventListener('message', event => {
         const message = event.data;
-        
         if (message.type === 'updateData') {
-            updateGrid(message.data);
+            // Support error fallback
+            updateGrid(message.data, message.errorInfo || null);
         } else if (message.type === 'logDownloaded') {
             // When a log is downloaded, update its state
             const logId = message.logId;
@@ -447,13 +520,13 @@
             if (searchBar && searchBar.style.display === 'flex') {
                 searchBar.style.display = 'none';
             }
-    }
+        }
     });
 
     //Para la funcion de búsqueda evitar que se llame mientras se esta escribiendo
     function debounce(fn, delay) {
         let timer = null;
-        return function(...args) {
+        return function (...args) {
             clearTimeout(timer);
             timer = setTimeout(() => fn.apply(this, args), delay);
         };

@@ -1,156 +1,277 @@
+:root {
+    --row-height: 24px;
+    --header-height: 28px;
+    --filter-bar-height: 36px;
+    --font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+    --font-size: var(--vscode-editor-font-size, 13px);
+    --border-color: var(--vscode-panel-border);
+    --hover-bg: var(--vscode-list-hoverBackground);
+    --selection-bg: var(--vscode-list-activeSelectionBackground);
+    --text-color: var(--vscode-editor-foreground);
+    --secondary-text: var(--vscode-descriptionForeground);
+    --accent-color: var(--vscode-textLink-foreground);
+}
+
 body, html {
-  width: 100vw;
-  height: 100vh;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  overflow: hidden;
-  font-family: var(--vscode-font-family, Arial);
-  background: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
-  font-size: 13px;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    background: var(--vscode-editor-background);
+    color: var(--text-color);
 }
 
+/* --- Filter Bar --- */
 .filter-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 20px;
-  padding: 5px;
-  background: var(--vscode-editor-background);
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--filter-bar-height);
+    padding: 0 12px;
+    background: var(--vscode-editor-background);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
-.filter-bar label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  user-select: none;
-  margin-right: 15px;
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9em;
+    color: var(--text-color);
+}
+
+.checkbox-container input {
+    margin: 0;
+    cursor: pointer;
+}
+
+.search-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.search-icon {
+    position: absolute;
+    left: 8px;
+    font-size: 12px;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+#log-search-input {
+    padding: 4px 8px 4px 26px;
+    height: 24px;
+    width: 250px;
+    border-radius: 2px;
+    border: 1px solid var(--vscode-input-border);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font-family: inherit;
+    font-size: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+#log-search-input:focus {
+    border-color: var(--vscode-focusBorder);
+}
+
+/* --- Table Container --- */
 #log-table-container {
-  position: absolute;
-  top: 30px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-x: auto !important; /* Fuerza scroll horizontal */
-  overflow-y: hidden;
-  height: calc(100% - 30px);
-  width: 100%;
-  background: var(--vscode-editor-background);
-  display: block;
+    position: absolute;
+    top: var(--filter-bar-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
+/* --- Header --- */
 .table-header-sticky {
-  position: sticky;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 2;
-  background: var(--vscode-editor-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
-  width: 100%;
-  height: 28px;
-  overflow: visible;
+    flex: 0 0 var(--header-height);
+    background: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--border-color);
+    overflow: hidden;
+    position: relative;
+    z-index: 5;
 }
 
 #log-table-header-wrapper {
-  width: max-content;
-  min-width: 100%;
-  will-change: transform;
+    width: 100%;
+    overflow: hidden;
 }
 
 #log-table-header {
-  width: max-content;
-  min-width: 800px;
-  border-collapse: collapse;
-  table-layout: fixed;
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
 }
 
 #log-table-header th {
-  text-align: left;
-  font-weight: normal;
-  padding: 2px 6px;
-  height: 22px;
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-panel-border);
-  white-space: pre;
+    text-align: left;
+    font-weight: 600;
+    padding: 0 8px;
+    height: var(--header-height);
+    color: var(--secondary-text);
+    border-right: 1px solid var(--border-color);
+    white-space: nowrap;
+    user-select: none;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
+#log-table-header th:last-child {
+    border-right: none;
+}
+
+/* --- Virtual Viewport --- */
 #virtual-viewport {
-  position: absolute;
-  top: 28px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: scroll;
-  overflow-x: visible;
-  width: 100%;
-  height: calc(100% - 28px);
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    position: relative;
+    scrollbar-width: thin;
+    scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+#virtual-viewport::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#virtual-viewport::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 5px;
+}
+
+#virtual-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
 }
 
 #content-container {
-  position: relative;
-  width: max-content;
-  min-width: 100%;
-  height: 100%;
+    position: relative;
+    width: max-content;
+    min-width: 100%;
 }
 
+/* --- Rows --- */
 .log-row {
-  position: absolute;
-  left: 0;
-  width: max-content;
-  min-width: 800px;
-  height: 22px;
-  display: flex;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editor-background);
+    position: absolute;
+    left: 0;
+    width: max-content;
+    min-width: 100%;
+    height: var(--row-height);
+    display: flex;
+    border-bottom: 1px solid transparent; /* Cleaner look */
+    background: transparent;
+    transition: background 0.1s;
 }
 
 .log-row:hover {
-  background: var(--vscode-list-hoverBackground);
+    background: var(--hover-bg);
 }
 
 .log-cell {
-  height: 100%;
-  padding: 1px 6px;
-  line-height: 20px;
-  border-right: 1px solid var(--vscode-panel-border);
-  overflow: visible;
-  text-overflow: initial;
-  white-space: pre;
+    height: 100%;
+    padding: 0 8px;
+    line-height: var(--row-height);
+    border-right: 1px solid transparent;
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
 }
 
-.method-entry {
-  color: var(--vscode-symbolIcon-methodForeground);
+/* Vertical grid lines on hover or always? Let's keep it clean, no vertical lines by default */
+.log-row .log-cell {
+    border-right: 1px solid rgba(128, 128, 128, 0.1);
 }
 
-.method-exit {
-  color: var(--vscode-symbolIcon-methodForeground);
-  opacity: 0.8;
+/* --- Event Type Styling --- */
+.log-row.USER_DEBUG .log-cell:nth-child(3) { /* Event Type Column */
+    color: #4ec9b0; /* Teal for debug */
+    font-weight: bold;
 }
 
-.method-inner {
-  padding-left: 8px;
+.log-row.SOQL_EXECUTE .log-cell:nth-child(3) {
+    color: #ce9178; /* Orange/Brown for SOQL */
 }
 
+.log-row.EXCEPTION_THROWN .log-cell {
+    color: #f48771; /* Reddish for errors */
+}
+
+.log-row.METHOD_ENTRY, .log-row.METHOD_EXIT {
+    color: var(--secondary-text);
+    font-style: italic;
+}
+
+.log-row.entry {
+    background: rgba(128, 128, 128, 0.05);
+}
+
+/* --- Collapse Button --- */
 .collapse-btn {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 1em;
-  cursor: pointer;
-  padding: 0;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    background: none;
+    border: none;
+    color: var(--secondary-text);
+    cursor: pointer;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    transition: background 0.2s;
 }
+
+.collapse-btn:hover {
+    background: rgba(128, 128, 128, 0.2);
+    color: var(--text-color);
+}
+
+/* --- Indentation for Tree View --- */
+/* This needs to be handled by padding in JS or multiple cells? 
+   Currently JS puts everything in cells. 
+   The 'Details' column might need indentation if we want a tree view there, 
+   but the current impl seems to just list them. 
+   Wait, the JS logic does `type: 'entry'` etc. but doesn't seem to indent the text visually 
+   other than maybe `method-inner` class in original CSS?
+   Original CSS had `.method-inner { padding-left: 8px; }`.
+   I should preserve that.
+*/
+
+.method-inner .log-cell:last-child {
+    padding-left: 20px; /* Indent details for inner items */
+    border-left: 2px solid var(--border-color);
+}
+
+/* Helper for method stack visualization if needed */
+.log-row[data-depth="1"] .log-cell:last-child { padding-left: 20px; }
+.log-row[data-depth="2"] .log-cell:last-child { padding-left: 40px; }
+/* ... dynamic padding would be better handled in JS style */

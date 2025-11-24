@@ -5,6 +5,7 @@ import { ApexLogFileManager } from './ApexLogFileManager';
 import { ensureTraceFlag } from './TraceFlagManager';
 import { outputChannel } from './extension';
 import { retryOnSessionExpire } from './connection';
+import { IApexLogPanelProvider } from './ApexLogPanel/IApexLogPanelProvider';
 
 export interface LogDataChangeEvent {
     data: any[];
@@ -24,19 +25,21 @@ export class LogDataProvider implements vscode.Disposable {
     private currentUserId?: string;
     public readonly logFileManager: ApexLogFileManager;
     private readonly context: vscode.ExtensionContext;
-    private isVisible: boolean = false;
+    private _isVisible: boolean = false;
+    private activeProvider?: IApexLogPanelProvider;
 
     constructor(
         context: vscode.ExtensionContext,
-        public connection: Connection,  
+        public connection: Connection,
         private readonly config: {
             autoRefresh: boolean;
             refreshInterval: number;
             currentUserOnly: boolean;
         },
-        private readonly activeProvider?: any
+        activeProvider?: IApexLogPanelProvider
     ) {
         this.context = context;
+        this.activeProvider = activeProvider;
         this.logFileManager = new ApexLogFileManager(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, activeProvider);
         this.logs = [];
         this.filteredLogs = [];
@@ -52,15 +55,26 @@ export class LogDataProvider implements vscode.Disposable {
             refreshInterval: number;
             currentUserOnly: boolean;
         },
-        activeProvider?: any
-    ): Promise<LogDataProvider> {        const provider = new LogDataProvider(context, connection, config, activeProvider);
+        activeProvider?: IApexLogPanelProvider
+    ): Promise<LogDataProvider> {
+        const provider = new LogDataProvider(context, connection, config, activeProvider);
         await provider.initialize();
         return provider;
+    }
+
+    public setActiveProvider(provider: IApexLogPanelProvider) {
+        this.activeProvider = provider;
+        this.logFileManager.setProvider(provider);
+    }
+
+    public get isVisible(): boolean {
+        return this._isVisible;
     }
 
     //Metodo para inicializar el LogDataProvider
     // Se asegura de que el trace flag esté activo para el usuario actual
     private async initialize() {
+        let errorInfo;
         try {
             this.currentUserId ??= await this.getCurrentUserId();
             // Always create trace flag for the current user, regardless of mode
@@ -70,7 +84,12 @@ export class LogDataProvider implements vscode.Disposable {
             // Do NOT call refreshLogs here or anywhere except when panel is visible.
         } catch (error) {
             console.error('LogDataProvider initialization error:', error);
-            throw error;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            outputChannel.appendLine(`LogDataProvider initialization error: ${errorMessage}`);
+            errorInfo = { hasError: true, message: errorMessage };
+        }
+        if (errorInfo && this.activeProvider?.updateView) {
+            this.activeProvider.updateView(this.getGridData(), false, errorInfo);
         }
     }
 
@@ -83,25 +102,23 @@ export class LogDataProvider implements vscode.Disposable {
         const gridData = this.getGridData();
         this._onDidChangeData.fire({ data: gridData, isAutoRefresh });
     }
-    
+
     //Metodo para refrescar los ApexLogs de la org de Salesforce
     public async refreshLogs(isInitialLoad: boolean = false, isAutoRefresh: boolean = false): Promise<void> {
         if (this.isRefreshing) {
             return;
         }
         this.isRefreshing = true;
-        //outputChannel.appendLine('Refreshing logs...');
-        
+        let errorInfo: { hasError: boolean, message?: string } | undefined = undefined;
         //Contruccion de la query para obtener los ApexLogs
         // Si currentUserOnly está activado, se filtra por el ID del usuario actual
         let query = 'SELECT Id, Application, DurationMilliseconds, LogLength, LogUser.Name, Operation, Request, StartTime, Status FROM ApexLog';
         if (this.config.currentUserOnly && this.currentUserId) {
             query += ` WHERE LogUserId = '${this.currentUserId}'`;
         }
-        query += ' ORDER BY StartTime DESC LIMIT 100'; //TODO: Cambiar el limite de logs a mostrar segun setting
+        query += ' ORDER BY StartTime DESC LIMIT 100';
 
         try {
-
             const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query(query), this) as { records: ApexLogRecord[] };
 
             if (!result.records || result.records.length === 0) {
@@ -112,18 +129,22 @@ export class LogDataProvider implements vscode.Disposable {
                 //Procesa los logs obtenidos de la org
                 this.processLogs(result, isInitialLoad);
             }
-
-            //Notifica los nuevos logs al panel
-            this._notifyDataChange(isAutoRefresh);
-
         } catch (error: any) {
             outputChannel.appendLine(`Log refresh error: ${error}`);
             vscode.window.showErrorMessage(`Failed to refresh logs: ${error.message}`);
+            // Detect common error scenarios and propagate errorInfo
+            errorInfo = { hasError: true, message: error instanceof Error ? error.message : String(error) };
         } finally {
             this.isRefreshing = false;
             // Always schedule the next refresh if auto-refresh is enabled, regardless of isInitialLoad
             if (!this.autoRefreshPaused) {
                 this.scheduleRefresh();
+            }
+            // Always notify panel, with errorInfo if present
+            if (this.activeProvider?.updateView) {
+                this.activeProvider.updateView(this.getGridData(), isAutoRefresh, errorInfo);
+            } else {
+                this._notifyDataChange(isAutoRefresh);
             }
         }
     }
@@ -132,7 +153,7 @@ export class LogDataProvider implements vscode.Disposable {
     private processLogs(result: { records: ApexLogRecord[] }, isInitialLoad: boolean) {
         //Convierte los registros obtenidos en instancias de ApexLog
         const newLogs = result.records.map(record => new ApexLog(record, this.connection));
-        
+
         this.logs = newLogs
             .filter(log => log.operation !== '<empty>') //TODO: Filtrar logs con operación vacía o no segun setting
             .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
@@ -149,7 +170,7 @@ export class LogDataProvider implements vscode.Disposable {
 
     //Metodo para saber si el panel esta visible al usuario y tiene que seguir autorefrescando los logs
     public setPanelVisibility(visible: boolean) {
-        this.isVisible = visible;
+        this._isVisible = visible;
         if (visible && this.config.autoRefresh && this.autoRefreshPaused) {
             //Si el panel se vuelve visible, esta configurado el autorefresh y el auto-refresh está pausado, reinicia el auto-refresh
             this.startAutoRefresh();
@@ -162,7 +183,7 @@ export class LogDataProvider implements vscode.Disposable {
     //Metodo para iniciar el autorefresh de logs
     private startAutoRefresh() {
         // Only start if panel is visible
-        if (this.isVisible) {
+        if (this._isVisible) {
             this.autoRefreshPaused = false;
             this.scheduleRefresh();
         }
@@ -184,7 +205,7 @@ export class LogDataProvider implements vscode.Disposable {
             clearTimeout(this.autoRefreshScheduledId);
         }
 
-        if (this.isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
+        if (this._isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
             this.autoRefreshScheduledId = setTimeout(() => this.refreshLogs(false, true), this.config.refreshInterval);
         }
     }
@@ -198,7 +219,7 @@ export class LogDataProvider implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         await config.update('autoRefresh', this.config.autoRefresh, vscode.ConfigurationTarget.Global);
 
-        if (enabled && this.isVisible) {
+        if (enabled && this._isVisible) {
             //Si se activa el autorefresh y el panel está visible inicia el autorefresh
             this.startAutoRefresh();
         } else {
@@ -273,7 +294,7 @@ export class LogDataProvider implements vscode.Disposable {
         this._filterLogs();
         this._notifyDataChange(false);
     }
-    
+
     //Metodo para filtrar los logs segun el texto de busqueda
     private _filterLogs() {
         if (!this.searchText) {
@@ -330,7 +351,7 @@ export class LogDataProvider implements vscode.Disposable {
     // y refresca los logs con la nueva conexión
     public async updateConnection(newConnection: Connection) {
         this.connection = newConnection;
-       
+
         try {
             this.currentUserId = await this.getCurrentUserId();
             if (this.currentUserId) {

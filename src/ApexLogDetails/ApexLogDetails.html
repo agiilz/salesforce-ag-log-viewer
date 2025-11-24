@@ -7,9 +7,22 @@
 </head>
 <body>
     <div class="filter-bar">
-        <label><input type="checkbox" id="hide-heap-allocate" checked> Hide HEAP_ALLOCATE</label>
-        <label><input type="checkbox" id="only-user-debug"> Show Debug Logs</label>
-        <input id="log-search-input" type="text" placeholder="Buscar..." class="vscode-input" style="margin-left:8px;max-width:250px;height:22px;padding:2px 8px;border-radius:4px;border:1px solid var(--vscode-input-border);background:var(--vscode-input-background);color:var(--vscode-input-foreground);font-size:1em;box-sizing:border-box;">
+        <div class="filter-group">
+            <label class="checkbox-container">
+                <input type="checkbox" id="hide-heap-allocate" checked>
+                <span class="checkmark"></span>
+                Hide HEAP_ALLOCATE
+            </label>
+            <label class="checkbox-container">
+                <input type="checkbox" id="only-user-debug">
+                <span class="checkmark"></span>
+                Show Debug Logs
+            </label>
+        </div>
+        <div class="search-container">
+            <span class="search-icon">🔍</span>
+            <input id="log-search-input" type="text" placeholder="Search logs..." class="vscode-input">
+        </div>
     </div>
     <div id="log-table-container">
         <div class="table-header-sticky">

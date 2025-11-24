@@ -11,7 +11,7 @@ dist/
 # IDE
 .vscode/
 .idea/
-
+.sfdx/
 # Environment
 .env
 .env.local

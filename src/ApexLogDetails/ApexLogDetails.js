@@ -22,10 +22,10 @@ class ApexLogDetails {
         for (let idx = 0; idx < logLines.length; idx++) {
             const line = logLines[idx];
             if (/Execute Anonymous:/i.test(line)) continue;
-            
+
             const parts = line.split('|');
             let timestamp = '', eventType = '', details = '', lineNumber = '';
-            
+
             if (parts.length === 1) {
                 details = parts[0];
             } else if (parts.length === 2) {
@@ -52,11 +52,11 @@ class ApexLogDetails {
 
             // Añadir fila sin seguimiento de bloques de método en modo solo debug
             if (onlyUserDebug) {
-                rows.push({ 
-                    idx, 
-                    timestamp, 
-                    eventType, 
-                    details, 
+                rows.push({
+                    idx,
+                    timestamp,
+                    eventType,
+                    details,
                     blockId: null,
                     type: 'normal',
                     lineNumber
@@ -66,17 +66,20 @@ class ApexLogDetails {
 
             // Manejar bloques de método solo cuando no es modo debug
             if (eventType === 'METHOD_ENTRY') {
+                const depth = methodStack.length;
                 methodBlockId++;
                 methodStack.push({ id: methodBlockId, start: idx });
-                rows.push({ idx, timestamp, eventType, details, blockId: methodBlockId, type: 'entry', lineNumber });
+                rows.push({ idx, timestamp, eventType, details, blockId: methodBlockId, type: 'entry', lineNumber, depth });
             } else if (eventType === 'METHOD_EXIT' && methodStack.length > 0) {
                 const block = methodStack.pop();
+                const depth = methodStack.length;
                 if (block) {
-                    rows.push({ idx, timestamp, eventType, details, blockId: block.id, type: 'exit', lineNumber });
+                    rows.push({ idx, timestamp, eventType, details, blockId: block.id, type: 'exit', lineNumber, depth });
                 }
             } else {
                 const parentBlock = methodStack.length > 0 ? methodStack[methodStack.length - 1].id : null;
-                rows.push({ idx, timestamp, eventType, details, blockId: parentBlock, type: parentBlock ? 'inner' : 'normal', lineNumber });
+                const depth = methodStack.length;
+                rows.push({ idx, timestamp, eventType, details, blockId: parentBlock, type: parentBlock ? 'inner' : 'normal', lineNumber, depth });
             }
         }
 
@@ -102,7 +105,7 @@ class ApexLogDetails {
         // Limpiar contenido
         const contentContainer = document.getElementById('content-container');
         contentContainer.innerHTML = '';
-        
+
         // Establecer altura del contenedor
         contentContainer.style.height = `${rows.length * this.ROW_HEIGHT}px`;
 
@@ -203,7 +206,8 @@ class ApexLogDetails {
             if (!row) continue;
 
             const rowElement = document.createElement('div');
-            rowElement.className = `log-row ${row.type}`;
+            // Add eventType to classList for color coding
+            rowElement.className = `log-row ${row.type} ${row.eventType}`;
             rowElement.style.top = `${i * this.ROW_HEIGHT}px`;
 
             // Celda del botón de colapso
@@ -213,7 +217,8 @@ class ApexLogDetails {
             if (row.type === 'entry') {
                 const button = document.createElement('button');
                 button.className = 'collapse-btn';
-                button.textContent = this.virtualState.collapsedBlocks.has(row.blockId) ? '►' : '▼';
+                // Use icons or characters
+                button.textContent = this.virtualState.collapsedBlocks.has(row.blockId) ? '▶' : '▼';
                 button.onclick = (e) => {
                     e.stopPropagation();
                     this.toggleCollapse(row.blockId);
@@ -223,12 +228,22 @@ class ApexLogDetails {
             rowElement.appendChild(collapseCell);
 
             // Celdas de datos
-            [row.timestamp, row.eventType, row.lineNumber, row.details].forEach((text, i) => {
+            [row.timestamp, row.eventType, row.lineNumber, row.details].forEach((text, colIndex) => {
                 const cell = document.createElement('div');
                 cell.className = 'log-cell';
                 cell.textContent = text || '';
-                cell.style.width = this.COLUMN_WIDTHS[i + 1];
-                if (i === 3) cell.style.flex = '1'; // Hacer la columna de detalles flexible
+                cell.style.width = this.COLUMN_WIDTHS[colIndex + 1];
+
+                // Details column (index 3) gets indentation
+                if (colIndex === 3) {
+                    cell.style.flex = '1';
+                    if (row.depth > 0) {
+                        cell.style.paddingLeft = `${row.depth * 12 + 8}px`; // 8px base padding + 12px per level
+                        // Optional: Add border-left for tree guide
+                        // cell.style.borderLeft = '1px solid var(--vscode-tree-indentGuidesStroke)'; 
+                    }
+                }
+
                 rowElement.appendChild(cell);
             });
 
