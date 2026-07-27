@@ -2,6 +2,12 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.5]
+### Changed
+- Fix: Use `sf org auth show-access-token` to get the real access token (sf org display now redacts it)
+- Improvement: Parallelize sf CLI commands for faster connection startup
+- Improvement: Add timeout and maxBuffer to command execution
+
 ## [1.2.4]
 ### Changed
 Fixed:

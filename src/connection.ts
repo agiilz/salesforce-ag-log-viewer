@@ -36,17 +36,28 @@ async function createConnection(newOrgUsername: string): Promise<void> {
     outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
     currentOrgUsername = newOrgUsername;
 
-    // Get org details using the target org
-    const { stdout: orgDetailsOutputSF } = await executeCommand(`sf org display --json -o "${newOrgUsername}"`);
-    const orgDetails = JSON.parse(orgDetailsOutputSF);
+    // Get org details and access token in parallel (sf startup is slow on Windows)
+    const start = Date.now();
+    const [orgDetailsResult, tokenResultResult] = await Promise.all([
+        executeCommand(`sf org display --json -o "${newOrgUsername}"`),
+        executeCommand(`sf org auth show-access-token --target-org "${newOrgUsername}" --json`)
+    ]);
+    outputChannel.appendLine(`sf commands completed in ${Date.now() - start}ms`);
 
+    const orgDetails = JSON.parse(orgDetailsResult.stdout);
     if (!orgDetails.result) {
         throw new Error(`Failed to get org details for ${newOrgUsername}`);
     }
 
+    // Usamos sf org auth show-access-token para obtener el token.
+    const tokenResult = JSON.parse(tokenResultResult.stdout);
+    if (!tokenResult.result?.accessToken) {
+        throw new Error(`Failed to get access token for ${newOrgUsername}`);
+    }
+
     currentConnection = new Connection({
         instanceUrl: orgDetails.result.instanceUrl,
-        accessToken: orgDetails.result.accessToken
+        accessToken: tokenResult.result.accessToken
     });
 }
 
@@ -91,7 +102,7 @@ async function readTargetOrg(configPath: string, location: string): Promise<stri
 
 function executeCommand(command: string): Promise<{ stdout: string, stderr: string }> {
     return new Promise((resolve, reject) => {
-        exec(command, (error: Error | null, stdout: string, stderr: string) => {
+        exec(command, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (error: Error | null, stdout: string, stderr: string) => {
             if (error) {
                 reject(error);
             } else {
