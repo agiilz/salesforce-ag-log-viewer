@@ -63,7 +63,6 @@ export async function deleteAllLogs() {
     }, async (progress) => {
         try {
             const provider = await getLogDataProvider();
-            const connection = provider.connection;
 
             progress.report({ message: "Querying log IDs..." });
             const result = await retryOnSessionExpire(
@@ -89,7 +88,7 @@ export async function deleteAllLogs() {
 
                 try {
                     await Promise.all(chunk.map(id =>
-                        connection.request({
+                        provider.connection.request({
                             method: 'DELETE',
                             url: `/services/data/v58.0/sobjects/ApexLog/${id}`
                         }).then(() => {
@@ -320,7 +319,7 @@ export async function setTraceFlagForUser() {
         }
 
         // Query all active trace flags for users
-        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId, ExpirationDate FROM TraceFlag WHERE ExpirationDate > ${new Date().toISOString()}`), provider) as { records: any[] };
+        const traceFlagResult = await connection.tooling.query(`SELECT Id, TracedEntityId, ExpirationDate FROM TraceFlag WHERE ExpirationDate > ${new Date().toISOString()}`) as { records: any[] };
         const userIdToTraceFlag = new Map<string, string>();
         for (const tf of traceFlagResult.records || []) {
             userIdToTraceFlag.set(tf.TracedEntityId, tf.Id);
@@ -340,6 +339,10 @@ export async function setTraceFlagForUser() {
             ignoreFocusOut: true
         });
         if (!picked) return;
+        if (provider.connection !== connection) {
+            vscode.window.showWarningMessage('The Salesforce org changed. Select the user again.');
+            return;
+        }
         if (picked.hasTraceFlag) {
             await disableTraceFlagForUser(connection, picked.userId);
             vscode.window.showInformationMessage(`Trace flag disabled for user: ${picked.label}`);
@@ -375,13 +378,13 @@ export async function deleteAllTraceFlagsExceptCurrent() {
         const currentUserId = await provider.getCurrentUserId();
         // Query all trace flags except the current user's and the active ones
         const nowIso = new Date().toISOString();
-        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId FROM TraceFlag WHERE TracedEntityId != '${currentUserId}' AND ExpirationDate < ${nowIso}`), provider) as { records: any[] };
+        const traceFlagResult = await connection.tooling.query(`SELECT Id, TracedEntityId FROM TraceFlag WHERE TracedEntityId != '${currentUserId}' AND ExpirationDate < ${nowIso}`) as { records: any[] };
         if (!traceFlagResult.records || traceFlagResult.records.length === 0) {
             vscode.window.showInformationMessage('No trace flags found to delete');
             return;
         }
         for (const tf of traceFlagResult.records) {
-            await retryOnSessionExpire(async (conn) => await conn.tooling.delete('TraceFlag', tf.Id), provider);
+            await connection.tooling.delete('TraceFlag', tf.Id);
         }
         vscode.window.showInformationMessage('All trace flags deleted except the current user.');
     } catch (error: any) {

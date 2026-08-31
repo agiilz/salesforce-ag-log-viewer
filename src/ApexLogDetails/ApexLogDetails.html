@@ -16,7 +16,7 @@
             <label class="checkbox-container">
                 <input type="checkbox" id="only-user-debug">
                 <span class="checkmark"></span>
-                Show Debug Logs
+                Debug only
             </label>
         </div>
         <div class="search-container">
@@ -24,6 +24,50 @@
             <input id="log-search-input" type="text" placeholder="Search logs..." class="vscode-input">
         </div>
     </div>
+
+    <section id="execution-panel" class="execution-panel" aria-label="Execution flow" aria-expanded="true">
+        <div class="execution-header">
+            <button
+                id="execution-toggle"
+                class="execution-toggle"
+                type="button"
+                aria-expanded="true"
+                aria-controls="execution-content"
+                aria-label="Collapse execution flow"
+                title="Collapse execution flow">
+                <span class="execution-toggle-icon" aria-hidden="true">⌄</span>
+                <span class="execution-title">Execution flow</span>
+            </button>
+            <span id="execution-summary" class="execution-summary" aria-live="polite">Open a log to view its flow</span>
+            <div class="execution-actions" role="toolbar" aria-label="Execution flow controls">
+                <nav id="execution-breadcrumb" class="execution-breadcrumb" aria-label="Execution location">
+                    <button
+                        id="execution-back"
+                        class="execution-back"
+                        type="button"
+                        aria-label="Back to full execution"
+                        title="Back to full execution"
+                        hidden>←</button>
+                    <span class="execution-breadcrumb-current">Full execution</span>
+                </nav>
+                <button id="execution-zoom-out" class="execution-control" type="button" aria-label="Zoom out execution flow" title="Zoom out">−</button>
+                <button id="execution-zoom-in" class="execution-control" type="button" aria-label="Zoom in execution flow" title="Zoom in">+</button>
+                <button id="execution-fit" class="execution-control execution-fit" type="button" aria-label="Fit execution flow to view" title="Fit to view">Fit</button>
+            </div>
+        </div>
+        <div id="execution-content" class="execution-content">
+            <div id="execution-scroll" class="execution-scroll" tabindex="0" aria-label="Scrollable execution timeline">
+                <div id="execution-timeline" class="execution-timeline" aria-label="Execution timeline">
+                    <div id="execution-axis" class="execution-axis" aria-hidden="true"></div>
+                    <div id="execution-blocks" class="execution-layer execution-blocks"></div>
+                    <div id="execution-debug-markers" class="execution-layer execution-debug-markers"></div>
+                    <div id="execution-error-markers" class="execution-layer execution-error-markers"></div>
+                    <div id="execution-empty" class="execution-empty">Execution flow appears when a log is opened.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <div id="log-table-container">
         <div class="table-header-sticky">
             <div id="log-table-header-wrapper">

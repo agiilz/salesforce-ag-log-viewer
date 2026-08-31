@@ -2,7 +2,7 @@
   "name": "salesforce-ag-log-viewer",
   "displayName": "Salesforce Logs",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "publisher": "aGxLabs",
   "author": {
     "name": "Adrià Gil"
@@ -218,7 +218,8 @@
     "dev": "node esbuild.js --dev",
     "pretest": "npm run dev && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "test:org-switch": "node --test src/test/orgSwitch.test.js"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

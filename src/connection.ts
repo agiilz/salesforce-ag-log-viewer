@@ -200,8 +200,12 @@ export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Pr
     } catch (error: any) {
         const message = error instanceof Error ? error.message : String(error);
         if (isSessionExpiredError(message)) {
+            // A failed request from the previous org must not reconnect the
+            // provider or replay IDs/queries against the newly selected org.
+            if (provider && provider.connection !== connection) throw error;
             outputChannel.appendLine('Session expired, reloading Salesforce authentication...');
             const newConnection = await getConnection({ forceRefresh: true });
+            if (provider && provider.connection !== connection) throw error;
             if (provider && typeof provider.updateConnection === 'function') {
                 await provider.updateConnection(newConnection);
             }

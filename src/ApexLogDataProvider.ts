@@ -21,7 +21,12 @@ export class LogDataProvider implements vscode.Disposable {
     private searchText: string = '';
     private autoRefreshScheduledId?: NodeJS.Timeout;
     private autoRefreshPaused: boolean = true;
-    private isRefreshing: boolean = false;
+    private refreshingVersion?: number;
+    private connectionVersion = 0;
+    private connectionChanging = false;
+    private refreshRequested = false;
+    private initialRefreshRequested = false;
+    private disposed = false;
     private currentUserId?: string;
     public readonly logFileManager: ApexLogFileManager;
     private readonly context: vscode.ExtensionContext;
@@ -71,6 +76,10 @@ export class LogDataProvider implements vscode.Disposable {
         return this._isVisible;
     }
 
+    private get isRefreshing(): boolean {
+        return this.refreshingVersion === this.connectionVersion;
+    }
+
     //Metodo para inicializar el LogDataProvider
     // Se asegura de que el trace flag esté activo para el usuario actual
     private async initialize() {
@@ -94,6 +103,8 @@ export class LogDataProvider implements vscode.Disposable {
     }
 
     dispose() {
+        this.disposed = true;
+        this.connectionVersion++;
         this._onDidChangeData.dispose();
         this.stopAutoRefresh();
     }
@@ -105,10 +116,19 @@ export class LogDataProvider implements vscode.Disposable {
 
     //Metodo para refrescar los ApexLogs de la org de Salesforce
     public async refreshLogs(isInitialLoad: boolean = false, isAutoRefresh: boolean = false): Promise<void> {
-        if (this.isRefreshing) {
+        if (this.disposed) return;
+        if (this.isRefreshing || this.connectionChanging) {
+            this.refreshRequested = true;
+            this.initialRefreshRequested ||= isInitialLoad;
             return;
         }
-        this.isRefreshing = true;
+        this.refreshRequested = false;
+        isInitialLoad ||= this.initialRefreshRequested;
+        this.initialRefreshRequested = false;
+        const connectionVersion = this.connectionVersion;
+        // An old org's request may still be running. It must not block this
+        // generation's first refresh or release its lock when it finishes.
+        this.refreshingVersion = connectionVersion;
         let errorInfo: { hasError: boolean, message?: string } | undefined = undefined;
         //Contruccion de la query para obtener los ApexLogs
         // Si currentUserOnly está activado, se filtra por el ID del usuario actual
@@ -119,7 +139,11 @@ export class LogDataProvider implements vscode.Disposable {
         query += ' ORDER BY StartTime DESC LIMIT 100';
 
         try {
+            if (this.config.currentUserOnly && !this.currentUserId) {
+                throw new Error('Current Salesforce user is unavailable. Retry the Salesforce connection.');
+            }
             const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query(query), this) as { records: ApexLogRecord[] };
+            if (connectionVersion !== this.connectionVersion) return;
 
             if (!result.records || result.records.length === 0) {
                 //Si no hay registros en la org, se limpia el array de logs para mostrarlo vacio al usuario
@@ -130,21 +154,26 @@ export class LogDataProvider implements vscode.Disposable {
                 this.processLogs(result, isInitialLoad);
             }
         } catch (error: any) {
+            if (connectionVersion !== this.connectionVersion) return;
             outputChannel.appendLine(`Log refresh error: ${error}`);
             vscode.window.showErrorMessage(`Failed to refresh logs: ${error.message}`);
             // Detect common error scenarios and propagate errorInfo
             errorInfo = { hasError: true, message: error instanceof Error ? error.message : String(error) };
         } finally {
-            this.isRefreshing = false;
-            // Always schedule the next refresh if auto-refresh is enabled, regardless of isInitialLoad
-            if (!this.autoRefreshPaused) {
-                this.scheduleRefresh();
-            }
-            // Always notify panel, with errorInfo if present
-            if (this.activeProvider?.updateView) {
-                this.activeProvider.updateView(this.getGridData(), isAutoRefresh, errorInfo);
-            } else {
-                this._notifyDataChange(isAutoRefresh);
+            if (connectionVersion === this.connectionVersion) {
+                this.refreshingVersion = undefined;
+                if (this.activeProvider?.updateView) {
+                    this.activeProvider.updateView(this.getGridData(), isAutoRefresh, errorInfo);
+                } else {
+                    this._notifyDataChange(isAutoRefresh);
+                }
+                if (this.refreshRequested && !this.connectionChanging) {
+                    const initialLoad = this.initialRefreshRequested;
+                    this.initialRefreshRequested = false;
+                    void this.refreshLogs(initialLoad, false);
+                } else if (!this.autoRefreshPaused && !this.connectionChanging) {
+                    this.scheduleRefresh();
+                }
             }
         }
     }
@@ -319,17 +348,20 @@ export class LogDataProvider implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
 
-        //Comprobar que el usuario actual tiene un trace flag activo
+        const connection = this.connection;
+        const connectionVersion = this.connectionVersion;
+        const identity = await connection.identity();
+        if (connectionVersion !== this.connectionVersion) return;
+        this.currentUserId = identity.user_id;
+        // A trace-flag permission error must not change the user's visibility setting.
         try {
-            this.currentUserId = await this.getCurrentUserId();
             if (this.currentUserId) {
-                await ensureTraceFlag(this.connection, this.currentUserId);
+                await ensureTraceFlag(connection, this.currentUserId);
             }
         } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
-            this.config.currentUserOnly = false;
-            await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
+            outputChannel.appendLine(`Trace flag setup failed; keeping log visibility unchanged: ${error.message}`);
         }
+        if (connectionVersion !== this.connectionVersion) return;
         //Refresca los logs con el nuevo setting
         await this.refreshLogs(true, false);
         this._notifyDataChange(false);
@@ -350,21 +382,35 @@ export class LogDataProvider implements vscode.Disposable {
     // Se asegura de que el trace flag esté activo para el usuario actual
     // y refresca los logs con la nueva conexión
     public async updateConnection(newConnection: Connection) {
+        const connectionVersion = ++this.connectionVersion;
+        this.connectionChanging = true;
         this.connection = newConnection;
+        this.currentUserId = undefined;
+        this.logs = [];
+        this.filteredLogs = [];
+        this.searchText = '';
+        this._notifyDataChange(false);
 
         try {
-            this.currentUserId = await this.getCurrentUserId();
-            if (this.currentUserId) {
-                await ensureTraceFlag(this.connection, this.currentUserId);
+            // Capture both identity and connection locally. Another switch can
+            // complete while identity() is awaiting its response.
+            const identity = await newConnection.identity();
+            if (connectionVersion !== this.connectionVersion) return;
+            this.currentUserId = identity.user_id;
+            if (!this.currentUserId) throw new Error('Salesforce identity did not return a user ID.');
+            outputChannel.appendLine(`Using Salesforce user ${this.currentUserId} on ${newConnection.instanceUrl}`);
+            try {
+                await ensureTraceFlag(newConnection, this.currentUserId);
+            } catch (error: any) {
+                // ensureTraceFlag reports the actual API error. Existing logs
+                // remain readable even if this user cannot create trace flags.
+                outputChannel.appendLine(`Trace flag setup failed; keeping log visibility unchanged: ${error.message}`);
             }
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to get current user ID: ${error.message}. Showing all users.`);
-            this.config.currentUserOnly = false;
-            const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-            await config.update('currentUserOnly', false, vscode.ConfigurationTarget.Global);
+        } finally {
+            if (connectionVersion === this.connectionVersion) this.connectionChanging = false;
         }
 
-        //Refresca los logs con la nueva conexión
+        if (connectionVersion !== this.connectionVersion) return;
         await this.refreshLogs(true, false);
     }
 

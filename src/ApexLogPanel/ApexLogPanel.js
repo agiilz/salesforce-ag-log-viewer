@@ -12,11 +12,10 @@
 
     // On load, always clear any cached data to ensure only fresh logs are shown
     try {
+        const state = vscode.getState() || {};
         vscode.setState({
+            ...state,
             data: [],
-            columnWidths: Array.from(columnWidths.entries()),
-            sortConfig,
-            readLogIds: Array.from(readLogIds)
         });
         lastData = [];
     } catch (e) {
@@ -329,6 +328,20 @@
 
         // Capture scroll position before clearing
         const scrollTop = gridBody.scrollTop;
+
+        // Store current states before update
+        const currentStates = new Map();
+        document.querySelectorAll('.grid-row').forEach(row => {
+            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
+            if (logId) {
+                currentStates.set(logId, {
+                    read: row.dataset.read === 'true',
+                    downloading: row.dataset.downloading === 'true',
+                    selected: row.classList.contains('selected')
+                });
+            }
+        });
+
         gridBody.innerHTML = '';
 
         if (errorInfo && errorInfo.hasError) {
@@ -372,19 +385,6 @@
             initializeResizeHandles();
             isInitialized = true;
         }
-
-        // Store current states before update
-        const currentStates = new Map();
-        document.querySelectorAll('.grid-row').forEach(row => {
-            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
-            if (logId) {
-                currentStates.set(logId, {
-                    read: row.dataset.read === 'true',
-                    downloading: row.dataset.downloading === 'true',
-                    selected: row.classList.contains('selected')
-                });
-            }
-        });
 
         lastData = data;
 
@@ -527,6 +527,14 @@
                 row.dataset.downloading = 'false';
                 row.dataset.read = 'true';
                 readLogIds.add(logId);
+                saveState();
+            }
+        } else if (message.type === 'logOpenFailed') {
+            // Clear the in-progress state so a failed open can be retried
+            const logId = message.logId;
+            const row = document.querySelector(`[data-log-id="${logId}"]`)?.parentElement;
+            if (row) {
+                row.dataset.downloading = 'false';
                 saveState();
             }
         } else if (message.type === 'showSearchBox') {

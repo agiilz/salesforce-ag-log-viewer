@@ -10,7 +10,6 @@
 import { Connection } from 'jsforce';
 import * as vscode from 'vscode';
 import { outputChannel } from './extension';
-import { retryOnSessionExpire } from './connection';
 
 export interface DebugLevel {
     Id: string;
@@ -35,9 +34,14 @@ export interface TraceFlag {
 const LEVEL_NAME = 'SFDC_DevConsole';
 const LOG_TYPE = 'DEVELOPER_LOG';
 
-// Store timers and trace flag ids for keep-alive per user
-const traceFlagKeepAliveTimers: Map<string, NodeJS.Timeout> = new Map();
-const userTraceFlagIds: Map<string, string> = new Map();
+interface TraceFlagSession {
+    connection: Connection;
+    timer?: NodeJS.Timeout;
+    pending?: Promise<void>;
+}
+
+// Removing a session also invalidates work already awaiting a Salesforce response.
+const traceFlagSessions = new Map<string, TraceFlagSession>();
 
 // Start the keep-alive loop for the trace flag
 export async function startTraceFlagKeepAlive(connection: Connection, userId: string) {
@@ -50,36 +54,54 @@ export async function startTraceFlagKeepAlive(connection: Connection, userId: st
 
 // Stop the keep-alive loop for all users or a specific user
 export function stopTraceFlagKeepAlive(userId?: string) {
-    if (userId) {
-        if (traceFlagKeepAliveTimers.has(userId)) {
-            clearTimeout(traceFlagKeepAliveTimers.get(userId)!);
-            traceFlagKeepAliveTimers.delete(userId);
-            userTraceFlagIds.delete(userId);
-        }
-    } else {
-        for (const [uid, timer] of traceFlagKeepAliveTimers.entries()) {
-            clearTimeout(timer);
-        }
-        traceFlagKeepAliveTimers.clear();
-        userTraceFlagIds.clear();
+    for (const [uid, session] of traceFlagSessions) {
+        if (userId && uid !== userId) continue;
+        if (session.timer) clearTimeout(session.timer);
+        traceFlagSessions.delete(uid);
     }
 }
 
 //Function to ensure the trace flag is set for the user
 //This function will check if a trace flag already exists for the user and create one if it doesn't
 export async function ensureTraceFlag(connection: Connection, userId: string, expirationMinutes?: number, keepAlive: boolean = true): Promise<void> {
+    const existing = traceFlagSessions.get(userId);
+    if (existing?.connection === connection && existing.pending) {
+        return existing.pending;
+    }
+    stopTraceFlagKeepAlive(userId);
+    const session: TraceFlagSession = { connection };
+    traceFlagSessions.set(userId, session);
+    session.pending = configureTraceFlag(session, userId, expirationMinutes, keepAlive);
     try {
-        outputChannel.appendLine(`Checking trace flag for user: ${userId}`);
+        await session.pending;
+    } finally {
+        session.pending = undefined;
+        if (!session.timer && traceFlagSessions.get(userId) === session) {
+            traceFlagSessions.delete(userId);
+        }
+    }
+}
+
+async function configureTraceFlag(session: TraceFlagSession, userId: string, expirationMinutes: number | undefined, keepAlive: boolean): Promise<void> {
+    const connection = session.connection;
+    const isCurrent = () => traceFlagSessions.get(userId) === session;
+    try {
+        outputChannel.appendLine(`Checking trace flag for user: ${userId} on ${connection.instanceUrl}`);
         //Set the debug level for the trace flag
-        const debugLevelId = await ensureDebugLevel(connection);
+        const debugLevelId = await ensureDebugLevel(connection, isCurrent);
+        if (!isCurrent() || !debugLevelId) return;
         // Check for existing trace flag
-        const existingFlags = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, DebugLevelId, LogType, StartDate, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = '${LOG_TYPE}'`), null) as { records: TraceFlag[] };
+        // This connection already owns its jsforce refreshFn. Resolving the global
+        // target here can send this user's IDs to a different org during a switch.
+        const existingFlags = await connection.tooling.query(`SELECT Id, DebugLevelId, LogType, StartDate, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = '${LOG_TYPE}'`) as { records: TraceFlag[] };
+        if (!isCurrent()) return;
         outputChannel.appendLine(`Existing flags found: ${existingFlags.records?.length || 0}`);
         //Delete existing trace flags from the user
         if (existingFlags.records && existingFlags.records.length > 0) {
             for (const flag of existingFlags.records) {
                 outputChannel.appendLine(`Deleting current trace flag: ${flag.Id}`);
-                await retryOnSessionExpire(async (conn) => await conn.tooling.delete('TraceFlag', flag.Id), null);
+                await connection.tooling.delete('TraceFlag', flag.Id);
+                if (!isCurrent()) return;
             }
         }
         // Use config or default for expiration interval
@@ -91,47 +113,50 @@ export async function ensureTraceFlag(connection: Connection, userId: string, ex
 
         //Create new trace flag with custom expiration
         const traceFlagId = await createTraceFlag(connection, userId, debugLevelId, minutes);
+        if (!isCurrent()) return;
         outputChannel.appendLine(`Successfully created and activated trace flag: ${traceFlagId}`);
-        userTraceFlagIds.set(userId, traceFlagId);
         if (keepAlive) {
-            scheduleTraceFlagExtension(connection, userId, traceFlagId, minutes);
+            scheduleTraceFlagExtension(session, userId, traceFlagId, minutes);
         }
     } catch (error: any) {
+        if (!isCurrent()) return;
         const errorMessage = error?.message || 'Unknown error occurred';
-        outputChannel.appendLine(`Trace flag error: ${error}`);
-        vscode.window.showErrorMessage(`Failed to manage trace flag: ${errorMessage}`);
+        outputChannel.appendLine(`Trace flag error for user ${userId} on ${connection.instanceUrl}: ${error}`);
+        vscode.window.showErrorMessage(`Failed to manage trace flag for user ${userId}: ${errorMessage}`);
         throw error;
     }
 }
 
 // Schedule the timer to extend the trace flag expiration for a user
-function scheduleTraceFlagExtension(connection: Connection, userId: string, traceFlagId: string, minutes: number) {
-    // Clear any existing timer for this user
-    if (traceFlagKeepAliveTimers.has(userId)) {
-        clearTimeout(traceFlagKeepAliveTimers.get(userId)!);
-    }
+function scheduleTraceFlagExtension(session: TraceFlagSession, userId: string, traceFlagId: string, minutes: number) {
+    if (traceFlagSessions.get(userId) !== session) return;
+    if (session.timer) clearTimeout(session.timer);
     // Set timer to fire at (minutes - 1) minutes
     const interval = Math.max(minutes - 1, 1) * 60 * 1000;
-    const timer = setTimeout(async () => {
+    session.timer = setTimeout(async () => {
+        if (traceFlagSessions.get(userId) !== session) return;
+        session.timer = undefined;
         try {
-            await extendTraceFlagExpiration(connection, traceFlagId, minutes);
+            await extendTraceFlagExpiration(session.connection, traceFlagId, minutes);
+            if (traceFlagSessions.get(userId) !== session) return;
             outputChannel.appendLine(`Trace flag extended successfully: ${traceFlagId} for user: ${userId} in: ${minutes} minutes`);
-            scheduleTraceFlagExtension(connection, userId, traceFlagId, minutes); // Reschedule
+            scheduleTraceFlagExtension(session, userId, traceFlagId, minutes);
         } catch (err) {
+            if (traceFlagSessions.get(userId) !== session) return;
+            traceFlagSessions.delete(userId);
             outputChannel.appendLine(`Failed to extend trace flag for user ${userId}: ${err}`);
         }
     }, interval);
-    traceFlagKeepAliveTimers.set(userId, timer);
 }
 
 // Extend the expiration of the trace flag by N minutes from now
 async function extendTraceFlagExpiration(connection: Connection, traceFlagId: string, minutes: number) {
     const now = new Date();
     const newExpiration = new Date(now.getTime() + minutes * 60 * 1000);
-    const result = await retryOnSessionExpire(async (conn) => await conn.tooling.update('TraceFlag', {
+    const result = await connection.tooling.update('TraceFlag', {
         Id: traceFlagId,
         ExpirationDate: newExpiration.toISOString()
-    }), null) as { success: boolean; errors?: any };
+    }) as { success: boolean; errors?: any };
     if (!result.success) {
         throw new Error(`Failed to update trace flag expiration: ${JSON.stringify(result.errors)}`);
     }
@@ -144,13 +169,13 @@ async function createTraceFlag(connection: Connection, userId: string, debugLeve
     const future = new Date(now.getTime() + minutes * 60 * 1000); // Set expiration to N minutes from now
 
     // Create new trace flag
-    const result = await retryOnSessionExpire(async (conn) => await conn.tooling.create('TraceFlag', {
+    const result = await connection.tooling.create('TraceFlag', {
         TracedEntityId: userId,
         DebugLevelId: debugLevelId,
         LogType: LOG_TYPE,
         StartDate: now.toISOString(),
         ExpirationDate: future.toISOString()
-    }), null) as { id: string };
+    }) as { id: string };
 
     // The result of tooling.create is { id: string } on success, but may have errors if failed
     if (!('id' in result)) {
@@ -161,12 +186,13 @@ async function createTraceFlag(connection: Connection, userId: string, debugLeve
 }
 
 //Function to ensure the debug level exists in the org
-async function ensureDebugLevel(connection: Connection): Promise<string> {
+async function ensureDebugLevel(connection: Connection, isCurrent: () => boolean): Promise<string | undefined> {
     try {
         outputChannel.appendLine(`Checking for debug level: ${LEVEL_NAME}`);
         
         // Check for existing debug level in the org
-        const existingLevels = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, ApexCode, Visualforce, Database, System FROM DebugLevel WHERE DeveloperName = '${LEVEL_NAME}'`), null) as { records: DebugLevel[] };
+        const existingLevels = await connection.tooling.query(`SELECT Id, ApexCode, Visualforce, Database, System FROM DebugLevel WHERE DeveloperName = '${LEVEL_NAME}'`) as { records: DebugLevel[] };
+        if (!isCurrent()) return;
 
         if (existingLevels.records && existingLevels.records.length > 0) {
             outputChannel.appendLine(`Found existing debug level: ${existingLevels.records[0].Id}`);
@@ -178,9 +204,8 @@ async function ensureDebugLevel(connection: Connection): Promise<string> {
         }
             
     } catch (error: any) {
-        const errorMessage = error?.message || 'Unknown error occurred';
+        if (!isCurrent()) return;
         outputChannel.appendLine(`Debug level error: ${error}`);
-        vscode.window.showErrorMessage(`Failed to manage debug level: ${errorMessage}`);
         throw error;
     }
 }
@@ -188,7 +213,7 @@ async function ensureDebugLevel(connection: Connection): Promise<string> {
 //Function to create a new debug level in the org
 async function createDebugLevel(connection: Connection): Promise<string> {
 
-    const result = await retryOnSessionExpire(async (conn) => await conn.tooling.create('DebugLevel', {
+    const result = await connection.tooling.create('DebugLevel', {
         DeveloperName: LEVEL_NAME,
         MasterLabel: LEVEL_NAME,
         ApexCode: 'FINEST',
@@ -198,7 +223,7 @@ async function createDebugLevel(connection: Connection): Promise<string> {
         Callout: 'INFO',
         Workflow: 'INFO',
         Validation: 'INFO'
-    }), null) as { id: string }; 
+    }) as { id: string };
     
     // The result of tooling.create is { id: string } on success, but may have errors if failed
     if (!('id' in result)) {
@@ -218,15 +243,13 @@ export async function disableTraceFlagForUser(connection: Connection, userId: st
     stopTraceFlagKeepAlive(userId);
     try {
         outputChannel.appendLine(`Disabling trace flags for user: ${userId}`);
-        // Only get expired trace flags
-        const nowIso = new Date().toISOString();
-        const existingFlags = await retryOnSessionExpire(async (conn) => await conn.tooling.query(
+        const existingFlags = await connection.tooling.query(
             `SELECT Id FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = '${LOG_TYPE}'`
-        ), null) as { records: TraceFlag[] };
+        ) as { records: TraceFlag[] };
         if (existingFlags.records && existingFlags.records.length > 0) {
             for (const flag of existingFlags.records) {
                 outputChannel.appendLine(`Deleting trace flag: ${flag.Id}`);
-                await retryOnSessionExpire(async (conn) => await conn.tooling.delete('TraceFlag', flag.Id), null);
+                await connection.tooling.delete('TraceFlag', flag.Id);
             }
         } else {
             outputChannel.appendLine('No trace flags found to disable.');

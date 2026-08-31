@@ -2,6 +2,16 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.7]
+### Fixed
+- Switching orgs immediately clears old logs and retrieves the new org's logs without waiting for previous requests to finish.
+- Discards outdated log responses and errors so they cannot overwrite the panel or interrupt the current refresh.
+- Prevents late session-expiry recovery from replacing a newly selected org connection.
+- Keeps trace-flag requests, user IDs, and debug-level IDs on the same Salesforce connection.
+- Serializes overlapping org switches, avoids duplicate trace-flag setup, and prevents cancelled renewal timers from restarting.
+- Preserves log visibility settings when trace-flag setup fails and preserves search filters during queued refreshes.
+- Rejects trace-flag user selections made before an org switch and adds org/user context to trace-flag diagnostics.
+
 ## [1.2.6]
 ### Fixed
 - Replaced slow Salesforce CLI authentication subprocesses with direct Salesforce Core auth loading.

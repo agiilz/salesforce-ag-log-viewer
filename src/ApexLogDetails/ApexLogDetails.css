@@ -2,6 +2,12 @@
     --row-height: 24px;
     --header-height: 28px;
     --filter-bar-height: 36px;
+    --execution-height: 136px;
+    --execution-collapsed-height: 32px;
+    --execution-header-height: 32px;
+    --execution-axis-height: 22px;
+    --execution-track-height: 80px;
+    --execution-min-width: 720px;
     --font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
     --font-size: var(--vscode-editor-font-size, 13px);
     --border-color: var(--vscode-panel-border);
@@ -10,6 +16,13 @@
     --text-color: var(--vscode-editor-foreground);
     --secondary-text: var(--vscode-descriptionForeground);
     --accent-color: var(--vscode-textLink-foreground);
+    --debug-color: #4ec9b0;
+    --error-color: #f48771;
+    --timeline-grid: rgba(127, 127, 127, 0.14);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
 }
 
 body, html {
@@ -17,7 +30,6 @@ body, html {
     height: 100vh;
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
     overflow: hidden;
     font-family: var(--font-family);
     font-size: var(--font-size);
@@ -25,13 +37,18 @@ body, html {
     color: var(--text-color);
 }
 
+body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
 /* --- Filter Bar --- */
 .filter-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: relative;
+    flex: 0 0 var(--filter-bar-height);
     height: var(--filter-bar-height);
+    min-height: 0;
     padding: 0 12px;
     background: var(--vscode-editor-background);
     z-index: 10;
@@ -95,13 +112,357 @@ body, html {
     border-color: var(--vscode-focusBorder);
 }
 
-/* --- Table Container --- */
-#log-table-container {
+/* --- Compact execution flow --- */
+.execution-panel {
+    position: relative;
+    flex: 0 0 var(--execution-height);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: flex-basis 0.16s ease;
+}
+
+.execution-panel.is-collapsed,
+.execution-panel.collapsed,
+.execution-panel[aria-expanded="false"] {
+    flex-basis: var(--execution-collapsed-height);
+}
+
+.execution-panel.is-collapsed .execution-content,
+.execution-panel.collapsed .execution-content,
+.execution-panel[aria-expanded="false"] .execution-content {
+    display: none;
+}
+
+.execution-panel.is-collapsed .execution-toggle-icon,
+.execution-panel.collapsed .execution-toggle-icon,
+.execution-panel[aria-expanded="false"] .execution-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.execution-header {
+    flex: 0 0 var(--execution-header-height);
+    min-height: var(--execution-header-height);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+.execution-toggle,
+.execution-control,
+.execution-back {
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    cursor: pointer;
+}
+
+.execution-toggle {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-width: 0;
+    gap: 5px;
+    padding: 2px 4px 2px 1px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.execution-toggle:hover,
+.execution-control:hover,
+.execution-back:hover {
+    background: var(--hover-bg);
+}
+
+.execution-toggle:focus-visible,
+.execution-control:focus-visible,
+.execution-back:focus-visible,
+#execution-scroll:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.execution-toggle-icon {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    align-items: center;
+    justify-content: center;
+    color: var(--secondary-text);
+    font-size: 15px;
+    line-height: 12px;
+    transform: translateY(-1px);
+    transition: transform 0.16s ease;
+}
+
+.execution-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.execution-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--secondary-text);
+    font-size: 0.88em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.execution-actions {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.execution-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    max-width: 220px;
+    margin-right: 4px;
+    color: var(--secondary-text);
+    font-size: 0.88em;
+    white-space: nowrap;
+}
+
+.execution-breadcrumb-current {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.execution-back {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 22px;
+    padding: 0;
+    color: var(--secondary-text);
+    font-size: 15px;
+    line-height: 20px;
+}
+
+.execution-control {
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    color: var(--secondary-text);
+    font-size: 15px;
+    line-height: 22px;
+    text-align: center;
+}
+
+.execution-control.execution-fit {
+    flex-basis: 34px;
+    width: 34px;
+    font-size: 0.82em;
+}
+
+.execution-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    padding: 0 10px 8px;
+}
+
+.execution-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--vscode-editor-background);
+    scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+    scrollbar-width: thin;
+}
+
+.execution-scroll::-webkit-scrollbar {
+    height: 8px;
+}
+
+.execution-scroll::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 4px;
+}
+
+.execution-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.execution-timeline {
+    position: relative;
+    width: max(100%, var(--execution-min-width));
+    min-width: var(--execution-min-width);
+    height: 100%;
+    min-height: var(--execution-track-height);
+    overflow: hidden;
+    isolation: isolate;
+    background-image: repeating-linear-gradient(
+        to right,
+        transparent 0,
+        transparent 79px,
+        var(--timeline-grid) 80px
+    );
+}
+
+.execution-axis {
     position: absolute;
-    top: var(--filter-bar-height);
+    z-index: 1;
+    top: 0;
+    right: 0;
     left: 0;
+    height: var(--execution-axis-height);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--vscode-editor-background);
+    color: var(--secondary-text);
+    font-size: 0.78em;
+    line-height: calc(var(--execution-axis-height) - 1px);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.execution-layer {
+    position: absolute;
+    z-index: 2;
+    top: var(--execution-axis-height);
     right: 0;
     bottom: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.execution-layer > * {
+    pointer-events: auto;
+}
+
+.execution-block {
+    position: absolute;
+    top: 8px;
+    min-width: 3px;
+    height: 22px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--accent-color) 72%, transparent);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent-color) 22%, transparent);
+    color: var(--text-color);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82em;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.execution-block:hover,
+.execution-block.is-selected,
+.execution-block[aria-current="true"] {
+    border-color: var(--vscode-focusBorder);
+    background: color-mix(in srgb, var(--accent-color) 36%, transparent);
+}
+
+.execution-block-label {
+    display: block;
+    overflow: hidden;
+    padding: 0 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.execution-block[data-kind="trigger"] {
+    border-color: color-mix(in srgb, #c586c0 70%, transparent);
+    background: color-mix(in srgb, #c586c0 22%, transparent);
+}
+
+.execution-block[data-kind="flow"] {
+    border-color: color-mix(in srgb, #4fc1ff 70%, transparent);
+    background: color-mix(in srgb, #4fc1ff 20%, transparent);
+}
+
+.execution-block[data-kind="soql"] {
+    border-color: color-mix(in srgb, #ce9178 70%, transparent);
+    background: color-mix(in srgb, #ce9178 20%, transparent);
+}
+
+.execution-block[data-kind="dml"] {
+    border-color: color-mix(in srgb, #dcdcaa 70%, transparent);
+    background: color-mix(in srgb, #dcdcaa 18%, transparent);
+}
+
+.execution-block[data-kind="system"] {
+    border-color: color-mix(in srgb, var(--secondary-text) 70%, transparent);
+    background: color-mix(in srgb, var(--secondary-text) 15%, transparent);
+}
+
+.execution-debug-marker,
+.execution-error-marker {
+    position: absolute;
+    top: 4px;
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: 1px solid var(--vscode-editor-background);
+    cursor: pointer;
+}
+
+.execution-debug-marker {
+    z-index: 4;
+    border-radius: 50%;
+    background: var(--debug-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--debug-color) 50%, transparent);
+}
+
+.execution-error-marker {
+    z-index: 5;
+    top: 3px;
+    width: 9px;
+    height: 9px;
+    border-radius: 1px;
+    background: var(--error-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--error-color) 55%, transparent);
+    transform: rotate(45deg);
+}
+
+.execution-debug-marker:hover,
+.execution-error-marker:hover {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 2px;
+}
+
+.execution-empty {
+    position: absolute;
+    z-index: 6;
+    top: 50%;
+    left: 50%;
+    padding: 0 10px;
+    color: var(--secondary-text);
+    font-size: 0.86em;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+}
+
+.execution-empty[hidden] {
+    display: none;
+}
+
+/* --- Table Container --- */
+#log-table-container {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;

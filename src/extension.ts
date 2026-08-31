@@ -12,6 +12,8 @@ let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
 let activeProvider: ApexLogPanelProvider | undefined;
 let initializationPromise: Promise<void> | undefined;
+let reconnectPromise: Promise<void> | undefined;
+let reconnectRequested = false;
 let extensionComponentsRegistered = false;
 let focusScheduled = false;
 export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
@@ -54,7 +56,9 @@ async function initializeExtensionComponents(forceReconnect: boolean = false): P
     }
 
     if (initializationPromise) {
-        return initializationPromise;
+        await initializationPromise;
+        if (forceReconnect) await initializeExtensionComponents(true);
+        return;
     }
 
     initializationPromise = (async () => {
@@ -115,8 +119,7 @@ export async function retryConnection(): Promise<void> {
         cancellable: false
     }, async () => {
         try {
-            stopTraceFlagKeepAlive();
-            await initializeExtensionComponents(true);
+            await reconnectToConfiguredOrg();
             activeProvider?.postMessage({ type: 'connectionRestored' });
             outputChannel.appendLine('Salesforce connection restored successfully');
             vscode.window.showInformationMessage('Salesforce Log Viewer connected successfully.');
@@ -124,6 +127,26 @@ export async function retryConnection(): Promise<void> {
             reportConnectionFailure('Retry connection', error);
         }
     });
+}
+
+// Workspace and home config events can arrive together. Complete one switch
+// before starting another, then read the latest target if an event arrived meanwhile.
+async function reconnectToConfiguredOrg(): Promise<void> {
+    reconnectRequested = true;
+    if (!reconnectPromise) {
+        reconnectPromise = (async () => {
+            while (reconnectRequested) {
+                reconnectRequested = false;
+                stopTraceFlagKeepAlive();
+                try {
+                    await initializeExtensionComponents(true);
+                } catch (error) {
+                    if (!reconnectRequested) throw error;
+                }
+            }
+        })().finally(() => { reconnectPromise = undefined; });
+    }
+    return reconnectPromise;
 }
 
 function reportConnectionFailure(context: string, error: unknown): void {
@@ -167,33 +190,17 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
 
     const handleConfigChange = async () => {
         try {
-            stopTraceFlagKeepAlive();
-            if (logDataProvider && activeProvider) {
-                if (logDataProvider.isVisible) {
-                    await vscode.window.withProgress({
-                        location: vscode.ProgressLocation.Notification,
-                        title: 'Switching org and retrieving logs',
-                        cancellable: false
-                    }, async (progress) => {
-                        progress.report({ message: 'Updating connection...' });
-                        const newConnection = await getConnection({ forceRefresh: true });
-                        await logDataProvider!.updateConnection(newConnection);
-                        progress.report({ message: 'Refreshing logs...' });
-                        await new Promise(res => setTimeout(res, 300));
-                    });
-                    outputChannel.appendLine('Updated connection and refreshed logs after org change');
-                    // Send orgChanged message to webview to close search bar
-                    activeProvider.postMessage({ type: 'orgChanged' });
-                } else {
-                    const newConnection = await getConnection({ forceRefresh: true });
-                    await logDataProvider.updateConnection(newConnection);
-                    outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
-                }
+            if (logDataProvider?.isVisible) {
+                await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Switching org and retrieving logs',
+                    cancellable: false
+                }, reconnectToConfiguredOrg);
             } else {
-                // Activation may have failed because this file or its auth did not
-                // exist yet. A create/change event is enough to retry in place.
-                await initializeExtensionComponents(true);
+                await reconnectToConfiguredOrg();
             }
+            outputChannel.appendLine('Updated connection and refreshed logs after org change');
+            activeProvider?.postMessage({ type: 'orgChanged' });
         } catch (error) {
             reportConnectionFailure('Org configuration change', error);
         }
@@ -282,5 +289,6 @@ export async function openLog(data: { id: string }) {
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Failed to open log: ${errorMessage}`);
+        activeProvider?.postMessage({ type: 'logOpenFailed', logId: data.id });
     }
 }
