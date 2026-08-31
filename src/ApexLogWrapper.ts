@@ -37,10 +37,10 @@ export class ApexLog {
     }    
     
     //Obtener el log de la org en formato gzip (jsForce lo descomprime automaticamente a String)
-    public async getBody(): Promise<string> {
-        const result = await this.connection.tooling.request({
+    public async getBody(connection: Connection = this.connection): Promise<string> {
+        const result = await connection.tooling.request({
             method: 'GET',
-            url: `${this.connection.tooling._baseUrl()}/sobjects/ApexLog/${this.entry.Id}/Body`,
+            url: `${connection.tooling._baseUrl()}/sobjects/ApexLog/${this.entry.Id}/Body`,
             headers: {
                 'Accept-Encoding': 'gzip',
                 'Accept': 'text/plain'

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Salesforce Apex Log",
+  "scopeName": "source.salesforce-apex-log",
+  "patterns": [
+    {
+      "match": "\\b(FATAL_ERROR|EXCEPTION_THROWN)\\b",
+      "name": "invalid.illegal.salesforce-apex-log"
+    },
+    {
+      "match": "\\b(USER_DEBUG)\\b",
+      "name": "markup.inserted.salesforce-apex-log"
+    },
+    {
+      "match": "\\b(METHOD_ENTRY|METHOD_EXIT|CONSTRUCTOR_ENTRY|CONSTRUCTOR_EXIT)\\b",
+      "name": "entity.name.function.salesforce-apex-log"
+    },
+    {
+      "match": "\\b(SOQL_EXECUTE_BEGIN|SOQL_EXECUTE_END|DML_BEGIN|DML_END|CALLOUT_REQUEST|CALLOUT_RESPONSE)\\b",
+      "name": "keyword.control.salesforce-apex-log"
+    },
+    {
+      "match": "\\b(LIMIT_USAGE|LIMIT_USAGE_FOR_NS|CUMULATIVE_LIMIT_USAGE|CUMULATIVE_LIMIT_USAGE_END)\\b",
+      "name": "constant.language.salesforce-apex-log"
+    },
+    {
+      "match": "^\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?",
+      "name": "constant.numeric.salesforce-apex-log"
+    },
+    {
+      "match": "\\[[0-9]+\\]",
+      "name": "constant.numeric.line.salesforce-apex-log"
+    },
+    {
+      "match": "\\b(true|false|null)\\b",
+      "name": "constant.language.salesforce-apex-log"
+    }
+  ]
+}

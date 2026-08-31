@@ -9,27 +9,17 @@
     let activeResizeHandle = null;
     let isInitialized = false;
     let readLogIds = new Set(); // Track which logs have been read
-
-    // On load, always clear any cached data to ensure only fresh logs are shown
-    try {
-        vscode.setState({
-            data: [],
-            columnWidths: Array.from(columnWidths.entries()),
-            sortConfig,
-            readLogIds: Array.from(readLogIds)
-        });
-        lastData = [];
-    } catch (e) {
-        console.error('Failed to clear state on load:', e);
-    }
+    let compareLogIds = new Set();
+    let currentMeta = null;
+    let debouncedSearch = null;
 
     // Initialize state
     try {
         const state = vscode.getState() || {};
-        lastData = state.data || [];
         columnWidths = new Map(state.columnWidths || []);
         sortConfig = state.sortConfig || { field: null, ascending: true };
         readLogIds = new Set(state.readLogIds || []); // Restore read states
+        compareLogIds = new Set(state.compareLogIds || []);
     } catch (e) {
         console.error('Failed to get state:', e);
     }
@@ -37,10 +27,11 @@
     function saveState() {
         try {
             vscode.setState({
-                data: lastData,
+                version: 2,
                 columnWidths: Array.from(columnWidths.entries()),
                 sortConfig,
-                readLogIds: Array.from(readLogIds) // Save read states
+                readLogIds: Array.from(readLogIds),
+                compareLogIds: Array.from(compareLogIds)
             });
         } catch (e) {
             console.error('Failed to save state:', e);
@@ -50,6 +41,7 @@
     // Initialize column widths from the header and store default values
     function initializeColumnWidths() {
         const defaultWidths = {
+            'actions': 64,
             'user': 150,
             'time': 80,
             'status': 80,
@@ -74,10 +66,15 @@
     function initializeResizeHandles() {
         const headerCells = document.querySelectorAll('#grid-header .grid-cell');
         headerCells.forEach(cell => {
+            const field = cell.dataset.field;
             // Remove existing handlers and resize handles
             const existingHandle = cell.querySelector('.resize-handle');
             if (existingHandle) {
                 existingHandle.remove();
+            }
+
+            if (field === 'actions') {
+                return;
             }
 
             // Create new resize handle
@@ -196,11 +193,15 @@
         }
 
         const field = cell.dataset.field;
+        cell.setAttribute('role', 'columnheader');
         if (sortConfig.field === field) {
             const indicator = document.createElement('span');
             indicator.className = 'sort-indicator';
             indicator.textContent = sortConfig.ascending ? ' ↑' : ' ↓';
             cell.appendChild(indicator);
+            cell.setAttribute('aria-sort', sortConfig.ascending ? 'ascending' : 'descending');
+        } else {
+            cell.setAttribute('aria-sort', 'none');
         }
     }
 
@@ -218,52 +219,6 @@
 
         document.addEventListener('mousemove', resize);
         document.addEventListener('mouseup', stopResize);
-    }
-
-    function resize(e) {
-        if (!resizingColumn) return;
-
-        const width = Math.max(50, startWidth + (e.pageX - startX));
-        const field = resizingColumn.dataset.field;
-
-        resizingColumn.style.width = `${width}px`;
-        resizingColumn.style.flex = `0 0 ${width}px`;
-
-        const bodyCells = document.querySelectorAll(`#grid-body .grid-cell[data-field="${field}"]`);
-        bodyCells.forEach(cell => {
-            cell.style.width = `${width}px`;
-            cell.style.flex = `0 0 ${width}px`;
-
-            delete cell.dataset.truncated;
-            cell.removeAttribute('title');
-
-            const content = cell.textContent;
-            const tempSpan = document.createElement('span');
-            tempSpan.style.visibility = 'hidden';
-            tempSpan.style.position = 'absolute';
-            tempSpan.style.whiteSpace = 'nowrap';
-            tempSpan.textContent = content;
-            document.body.appendChild(tempSpan);
-
-            const contentWidth = tempSpan.offsetWidth;
-            document.body.removeChild(tempSpan);
-
-            const availableWidth = width - 12;
-
-            if (contentWidth > availableWidth) {
-                cell.dataset.truncated = 'true';
-                cell.title = content;
-            }
-        });
-
-        columnWidths.set(field, width);
-        saveState();
-    }
-
-    function stopResize() {
-        if (!resizingColumn || !activeResizeHandle) return;
-
-        saveState();
     }
 
     function resize(e) {
@@ -329,7 +284,22 @@
 
         // Capture scroll position before clearing
         const scrollTop = gridBody.scrollTop;
+
+        // Store current states before update
+        const currentStates = new Map();
+        document.querySelectorAll('#grid-body .grid-row').forEach(row => {
+            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
+            if (logId) {
+                currentStates.set(logId, {
+                    read: row.dataset.read === 'true',
+                    downloading: row.dataset.downloading === 'true',
+                    selected: row.classList.contains('selected')
+                });
+            }
+        });
+
         gridBody.innerHTML = '';
+        document.querySelector('.grid')?.setAttribute('aria-busy', 'false');
 
         if (errorInfo && errorInfo.hasError) {
             // Show error fallback UI
@@ -356,19 +326,6 @@
             isInitialized = true;
         }
 
-        // Store current states before update
-        const currentStates = new Map();
-        document.querySelectorAll('.grid-row').forEach(row => {
-            const logId = row.querySelector('[data-log-id]')?.dataset.logId;
-            if (logId) {
-                currentStates.set(logId, {
-                    read: row.dataset.read === 'true',
-                    downloading: row.dataset.downloading === 'true',
-                    selected: row.classList.contains('selected')
-                });
-            }
-        });
-
         lastData = data;
 
         // If no data, show empty message and clear cache
@@ -379,12 +336,7 @@
             gridBody.appendChild(emptyMsg);
             lastData = [];
             // Clear cached state
-            vscode.setState({
-                data: [],
-                columnWidths: Array.from(columnWidths.entries()),
-                sortConfig,
-                readLogIds: Array.from(readLogIds)
-            });
+            saveState();
             return;
         }
 
@@ -416,6 +368,8 @@
     function createRow(rowData, previousState = null) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'grid-row';
+        rowDiv.setAttribute('role', 'row');
+        rowDiv.tabIndex = 0;
 
         // Set initial states based on previous state, readLogIds, or uiStatus
         let isRead = previousState ? previousState.read : (rowData.uiStatus === 'downloaded' || readLogIds.has(rowData.id));
@@ -435,7 +389,50 @@
         idCell.dataset.logId = rowData.id;
         rowDiv.appendChild(idCell);
 
+        const actionCell = document.createElement('div');
+        actionCell.className = 'grid-cell action-cell';
+        actionCell.dataset.field = 'actions';
+        actionCell.setAttribute('role', 'gridcell');
+
+        const favoriteButton = document.createElement('button');
+        favoriteButton.type = 'button';
+        favoriteButton.className = 'row-icon-button favorite-button';
+        favoriteButton.textContent = rowData.favorite ? '★' : '☆';
+        favoriteButton.title = rowData.favorite ? 'Remove favorite' : 'Add favorite';
+        favoriteButton.setAttribute('aria-label', favoriteButton.title);
+        favoriteButton.onclick = (event) => {
+            event.stopPropagation();
+            vscode.postMessage({ command: 'toggleFavorite', logId: rowData.id });
+        };
+        actionCell.appendChild(favoriteButton);
+
+        const compareCheckbox = document.createElement('input');
+        compareCheckbox.type = 'checkbox';
+        compareCheckbox.className = 'compare-checkbox';
+        compareCheckbox.checked = compareLogIds.has(rowData.id);
+        compareCheckbox.title = 'Select for comparison';
+        compareCheckbox.setAttribute('aria-label', `Select ${rowData.operation || 'log'} for comparison`);
+        compareCheckbox.onclick = event => event.stopPropagation();
+        compareCheckbox.onchange = () => {
+            if (compareCheckbox.checked && compareLogIds.size >= 2) {
+                compareCheckbox.checked = false;
+                return;
+            }
+            if (compareCheckbox.checked) {
+                compareLogIds.add(rowData.id);
+            } else {
+                compareLogIds.delete(rowData.id);
+            }
+            updateCompareButton();
+            saveState();
+        };
+        actionCell.appendChild(compareCheckbox);
+        rowDiv.appendChild(actionCell);
+
         rowDiv.onclick = () => {
+            if (rowDiv.dataset.downloading === 'true') {
+                return;
+            }
             document.querySelectorAll('.grid-row.selected').forEach(row => {
                 if (row !== rowDiv) {
                     row.classList.remove('selected');
@@ -449,12 +446,19 @@
                 log: { id: rowData.id }
             });
         };
+        rowDiv.onkeydown = event => {
+            if ((event.key === 'Enter' || event.key === ' ') && event.target === rowDiv) {
+                event.preventDefault();
+                rowDiv.click();
+            }
+        };
 
         const fields = ['user', 'time', 'status', 'size', 'operation', 'duration'];
         fields.forEach(field => {
             const cell = document.createElement('div');
             cell.className = 'grid-cell';
             cell.dataset.field = field;
+            cell.setAttribute('role', 'gridcell');
             let timeTooltip = undefined;
             if (field === 'time' && typeof rowData[field] === 'string' && rowData[field].includes('|||')) {
                 const [display, tooltip] = rowData[field].split('|||');
@@ -501,21 +505,36 @@
         if (message.type === 'updateData') {
             // Support error fallback
             updateGrid(message.data, message.errorInfo || null);
-        } else if (message.type === 'logDownloaded') {
-            // When a log is downloaded, update its state
+            if (message.meta) {
+                updateMeta(message.meta, message.errorInfo || null);
+            }
+        } else if (message.type === 'logDownloaded' || message.type === 'logDownloadState') {
             const logId = message.logId;
-            console.log('Log downloaded:', logId);
             const row = document.querySelector(`[data-log-id="${logId}"]`)?.parentElement;
             if (row) {
-                row.dataset.downloading = 'false';
-                row.dataset.read = 'true';
-                readLogIds.add(logId);
+                const state = message.type === 'logDownloaded' ? 'downloaded' : message.state;
+                row.dataset.downloading = (state === 'downloading').toString();
+                if (state === 'downloaded') {
+                    row.dataset.read = 'true';
+                    row.removeAttribute('title');
+                    readLogIds.add(logId);
+                } else if (state === 'failed') {
+                    row.classList.remove('selected');
+                    row.title = message.message || 'Failed to open log. Click to retry.';
+                }
                 saveState();
             }
         } else if (message.type === 'showSearchBox') {
             showInlineSearchBox();
+        } else if (message.type === 'clearDownloadedState') {
+            readLogIds.clear();
+            updateGrid(lastData);
         } else if (message.type === 'orgChanged') {
             // Hide search bar on org change only
+            debouncedSearch?.cancel();
+            readLogIds.clear();
+            compareLogIds.clear();
+            updateCompareButton();
             const searchBar = document.getElementById('inline-search-bar');
             if (searchBar && searchBar.style.display === 'flex') {
                 searchBar.style.display = 'none';
@@ -526,10 +545,15 @@
     //Para la funcion de búsqueda evitar que se llame mientras se esta escribiendo
     function debounce(fn, delay) {
         let timer = null;
-        return function (...args) {
+        const debounced = function (...args) {
             clearTimeout(timer);
             timer = setTimeout(() => fn.apply(this, args), delay);
         };
+        debounced.cancel = () => {
+            clearTimeout(timer);
+            timer = null;
+        };
+        return debounced;
     }
 
     function showInlineSearchBox() {
@@ -537,6 +561,7 @@
         const input = document.getElementById('inline-search-input');
         if (searchBar && input) {
             if (searchBar.style.display === 'flex') {
+                debouncedSearch?.cancel();
                 searchBar.style.display = 'none';
                 vscode.postMessage({ command: 'inlineSearch', text: '' });
             } else {
@@ -544,12 +569,14 @@
                 input.value = '';
                 input.focus();
                 // Use debounce for search
-                const debouncedSearch = debounce(() => {
+                debouncedSearch?.cancel();
+                debouncedSearch = debounce(() => {
                     vscode.postMessage({ command: 'inlineSearch', text: input.value });
                 }, 200);
                 input.oninput = debouncedSearch;
                 input.onkeydown = (e) => {
                     if (e.key === 'Escape') {
+                        debouncedSearch?.cancel();
                         searchBar.style.display = 'none';
                         vscode.postMessage({ command: 'inlineSearch', text: '' });
                     }
@@ -567,9 +594,51 @@
                 gridHeader.style.transform = `translateX(-${gridBody.scrollLeft}px)`;
             });
         }
-        if (lastData.length > 0) {
-            updateGrid(lastData);
-        }
+        document.getElementById('status-filter')?.addEventListener('change', postFilters);
+        document.getElementById('user-filter')?.addEventListener('change', postFilters);
+        document.getElementById('favorites-filter')?.addEventListener('click', event => {
+            const button = event.currentTarget;
+            const pressed = button.getAttribute('aria-pressed') !== 'true';
+            button.setAttribute('aria-pressed', pressed.toString());
+            button.textContent = pressed ? '★' : '☆';
+            postFilters();
+        });
+        document.getElementById('regex-filter')?.addEventListener('click', event => {
+            const button = event.currentTarget;
+            const pressed = button.getAttribute('aria-pressed') !== 'true';
+            button.setAttribute('aria-pressed', pressed.toString());
+            postFilters();
+        });
+        document.getElementById('advanced-filter-toggle')?.addEventListener('click', event => {
+            const button = event.currentTarget;
+            const panel = document.getElementById('advanced-filters');
+            const expanded = button.getAttribute('aria-expanded') !== 'true';
+            button.setAttribute('aria-expanded', expanded.toString());
+            if (panel) panel.hidden = !expanded;
+        });
+        ['date-filter', 'duration-filter', 'size-filter', 'exceptions-filter'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', postFilters);
+        });
+        document.getElementById('clear-advanced-filters')?.addEventListener('click', () => {
+            document.getElementById('date-filter').value = '';
+            document.getElementById('duration-filter').value = '';
+            document.getElementById('size-filter').value = '';
+            document.getElementById('exceptions-filter').checked = false;
+            postFilters();
+        });
+        document.getElementById('export-filtered')?.addEventListener('click', () => {
+            vscode.postMessage({ command: 'exportFilteredLogs' });
+        });
+        document.getElementById('load-older')?.addEventListener('click', () => {
+            document.querySelector('.grid')?.setAttribute('aria-busy', 'true');
+            vscode.postMessage({ command: 'loadOlder' });
+        });
+        document.getElementById('compare-button')?.addEventListener('click', () => {
+            if (compareLogIds.size === 2) {
+                vscode.postMessage({ command: 'compareLogs', logIds: Array.from(compareLogIds) });
+            }
+        });
+        updateCompareButton();
     });
 
     // Listen for Ctrl+F to open the search bar
@@ -579,4 +648,87 @@
             showInlineSearchBox();
         }
     });
+
+    function postFilters() {
+        vscode.postMessage({
+            command: 'setFilters',
+            filters: {
+                text: document.getElementById('inline-search-input')?.value || '',
+                useRegex: document.getElementById('regex-filter')?.getAttribute('aria-pressed') === 'true',
+                status: document.getElementById('status-filter')?.value || '',
+                user: document.getElementById('user-filter')?.value || '',
+                favoritesOnly: document.getElementById('favorites-filter')?.getAttribute('aria-pressed') === 'true'
+                ,dateFrom: document.getElementById('date-filter')?.value || ''
+                ,minimumDurationMs: Number(document.getElementById('duration-filter')?.value || 0)
+                ,minimumSizeKb: Number(document.getElementById('size-filter')?.value || 0)
+                ,exceptionsOnly: Boolean(document.getElementById('exceptions-filter')?.checked)
+            }
+        });
+    }
+
+    function updateCompareButton() {
+        const button = document.getElementById('compare-button');
+        if (button) {
+            button.disabled = compareLogIds.size !== 2;
+            button.textContent = compareLogIds.size === 0 ? 'Compare' : `Compare (${compareLogIds.size}/2)`;
+        }
+    }
+
+    function updateMeta(meta, errorInfo) {
+        currentMeta = meta;
+        const indicator = document.getElementById('connection-indicator');
+        indicator?.classList.toggle('error', Boolean(errorInfo?.hasError));
+        indicator?.classList.toggle('refreshing', Boolean(meta.isRefreshing));
+        const activeOrg = document.getElementById('active-org');
+        if (activeOrg) {
+            activeOrg.textContent = errorInfo?.hasError ? 'Connection error' : formatOrg(meta.activeOrg);
+            activeOrg.title = meta.activeOrg || '';
+        }
+        const logCount = document.getElementById('log-count');
+        if (logCount) logCount.textContent = `${meta.visibleCount}/${meta.loadedCount} logs`;
+        const lastRefresh = document.getElementById('last-refresh');
+        if (lastRefresh) {
+            lastRefresh.textContent = meta.lastSuccessfulRefresh
+                ? `Updated ${new Date(meta.lastSuccessfulRefresh).toLocaleTimeString()}`
+                : '';
+        }
+        updateSelect('status-filter', meta.statuses || [], meta.filters?.status || '', 'All statuses');
+        updateSelect('user-filter', meta.users || [], meta.filters?.user || '', 'All users');
+        const favoritesButton = document.getElementById('favorites-filter');
+        if (favoritesButton) {
+            const pressed = Boolean(meta.filters?.favoritesOnly);
+            favoritesButton.setAttribute('aria-pressed', pressed.toString());
+            favoritesButton.textContent = pressed ? '★' : '☆';
+        }
+        const regexButton = document.getElementById('regex-filter');
+        if (regexButton) {
+            regexButton.setAttribute('aria-pressed', Boolean(meta.filters?.useRegex).toString());
+        }
+        const dateFilter = document.getElementById('date-filter');
+        if (dateFilter) dateFilter.value = meta.filters?.dateFrom || '';
+        const durationFilter = document.getElementById('duration-filter');
+        if (durationFilter) durationFilter.value = meta.filters?.minimumDurationMs || '';
+        const sizeFilter = document.getElementById('size-filter');
+        if (sizeFilter) sizeFilter.value = meta.filters?.minimumSizeKb || '';
+        const exceptionsFilter = document.getElementById('exceptions-filter');
+        if (exceptionsFilter) exceptionsFilter.checked = Boolean(meta.filters?.exceptionsOnly);
+        const loadOlder = document.getElementById('load-older');
+        if (loadOlder) loadOlder.hidden = !meta.hasMore;
+    }
+
+    function updateSelect(id, values, selected, emptyLabel) {
+        const select = document.getElementById(id);
+        if (!select) return;
+        select.replaceChildren(new Option(emptyLabel, ''));
+        values.forEach(value => select.add(new Option(value, value)));
+        select.value = selected;
+    }
+
+    function formatOrg(instanceUrl) {
+        try {
+            return new URL(instanceUrl).hostname;
+        } catch {
+            return instanceUrl || 'Connected';
+        }
+    }
 })();

@@ -59,55 +59,73 @@ export async function deleteAllLogs() {
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Deleting Salesforce logs...",
-        cancellable: false
-    }, async (progress) => {
+        cancellable: true
+    }, async (progress, token) => {
         try {
             const provider = await getLogDataProvider();
-            const connection = provider.connection;
 
             progress.report({ message: "Querying log IDs..." });
-            const result = await retryOnSessionExpire(
-                async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog LIMIT 10000'),
+            const logIds: string[] = [];
+            let result = await retryOnSessionExpire(
+                async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog'),
                 provider
-            ) as { records: { Id: string }[] };
+            ) as { records: { Id: string }[]; done: boolean; nextRecordsUrl?: string };
 
-            if (!result.records || result.records.length === 0) {
+            while (true) {
+                logIds.push(...(result.records || []).map(record => record.Id));
+                if (result.done || !result.nextRecordsUrl || token.isCancellationRequested) {
+                    break;
+                }
+                const nextRecordsUrl = result.nextRecordsUrl;
+                result = await retryOnSessionExpire(
+                    async (conn) => await conn.tooling.queryMore(nextRecordsUrl),
+                    provider
+                ) as { records: { Id: string }[]; done: boolean; nextRecordsUrl?: string };
+                progress.report({ message: `Found ${logIds.length} logs...` });
+            }
+
+            if (logIds.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
-                provider.notifyDataChange();
                 return;
             }
 
-            const logIds = result.records.map(record => record.Id);
             const chunkSize = 200;
             let deletedCount = 0;
+            let failedCount = 0;
 
             for (let i = 0; i < logIds.length; i += chunkSize) {
+                if (token.isCancellationRequested) {
+                    break;
+                }
                 const chunk = logIds.slice(i, i + chunkSize);
                 progress.report({
                     message: `Deleting logs ${i + 1}-${Math.min(i + chunkSize, logIds.length)} of ${logIds.length}...`
                 });
 
-                try {
-                    await Promise.all(chunk.map(id =>
-                        connection.request({
-                            method: 'DELETE',
-                            url: `/services/data/v58.0/sobjects/ApexLog/${id}`
-                        }).then(() => {
-                            deletedCount++;
-                        }).catch(err => {
-                            if (!/entity is deleted|not found|resource does not exist/i.test(err?.message || '')) {
-                                throw err;
-                            }
-                        })
-                    ));
-                } catch (err: any) {
-                    throw new Error(`Error deleting log chunk: ${err.message || err}`);
+                const deleteResult = await retryOnSessionExpire(
+                    async (conn) => await conn.tooling.delete('ApexLog', chunk),
+                    provider
+                );
+                const results = Array.isArray(deleteResult) ? deleteResult : [deleteResult];
+                for (const item of results as { success: boolean; errors?: { message?: string; statusCode?: string }[] }[]) {
+                    if (item.success || item.errors?.some(error => /entity is deleted|not found|resource does not exist/i.test(error.message || ''))) {
+                        deletedCount++;
+                    } else {
+                        failedCount++;
+                    }
                 }
             }
 
-            vscode.window.showInformationMessage(`Successfully deleted ${deletedCount} logs.`);
-            await provider.refreshLogs();
-            provider.notifyDataChange();
+            if (deletedCount > 0) {
+                await provider.refreshLogs();
+            }
+            if (token.isCancellationRequested) {
+                vscode.window.showWarningMessage(`Log deletion cancelled after removing ${deletedCount} of ${logIds.length} logs.`);
+            } else if (failedCount > 0) {
+                vscode.window.showWarningMessage(`Deleted ${deletedCount} logs; ${failedCount} could not be deleted. See the output channel for details.`);
+            } else {
+                vscode.window.showInformationMessage(`Successfully deleted ${deletedCount} logs.`);
+            }
 
         } catch (error: any) {
             const errorMessage = error?.message || 'Unknown error occurred';
@@ -257,11 +275,7 @@ async function setRefreshInterval(config: vscode.WorkspaceConfiguration) {
 export async function showSearchBox() {
     try {
         const provider = await getLogDataProvider();
-        //Usar el buscador del panel
-        const activeProvider = (provider as any).activeProvider;
-        if (activeProvider && typeof activeProvider.showSearchBoxInWebview === 'function') {
-            activeProvider.showSearchBoxInWebview();
-        }
+        provider.showSearchBox();
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to filter logs: ${errorMessage}`);
@@ -296,6 +310,7 @@ export async function clearDownloadedLogs() {
     try {
         const provider = await getLogDataProvider();
         await provider.logFileManager.clearDownloadedLogs();
+        provider.clearDownloadedState();
         vscode.window.showInformationMessage('Downloaded logs cleared successfully.');
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
@@ -312,7 +327,7 @@ export async function setTraceFlagForUser() {
         
         // Query all active users except current user
         const userQuery = `SELECT Id, Name, Username FROM User WHERE IsActive = true AND Id != '${currentUserId}' ORDER BY Name`;
-        const users = await queryAllUsers(connection, userQuery);
+        const users = await queryAllUsers(provider, userQuery);
 
         if (!users || users.length === 0) {
             vscode.window.showWarningMessage('No active users found in the org.');
@@ -320,7 +335,7 @@ export async function setTraceFlagForUser() {
         }
 
         // Query all active trace flags for users
-        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId, ExpirationDate FROM TraceFlag WHERE ExpirationDate > ${new Date().toISOString()}`), provider) as { records: any[] };
+        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId, ExpirationDate FROM TraceFlag WHERE LogType = 'DEVELOPER_LOG' AND ExpirationDate > ${new Date().toISOString()}`), provider) as { records: any[] };
         const userIdToTraceFlag = new Map<string, string>();
         for (const tf of traceFlagResult.records || []) {
             userIdToTraceFlag.set(tf.TracedEntityId, tf.Id);
@@ -354,13 +369,17 @@ export async function setTraceFlagForUser() {
     }
 }
 
-async function queryAllUsers(connection: any, soql: string) {
+async function queryAllUsers(provider: Awaited<ReturnType<typeof getLogDataProvider>>, soql: string) {
     let records: any[] = [];
-    let result = await connection.query(soql);
+    let result = await retryOnSessionExpire(connection => Promise.resolve(connection.query(soql)), provider);
     records.push(...result.records);
 
     while (!result.done) {
-        result = await connection.queryMore(result.nextRecordsUrl);
+        const nextRecordsUrl = result.nextRecordsUrl;
+        if (!nextRecordsUrl) {
+            break;
+        }
+        result = await retryOnSessionExpire(connection => Promise.resolve(connection.queryMore(nextRecordsUrl)), provider);
         records.push(...result.records);
     }
 
@@ -371,11 +390,10 @@ async function queryAllUsers(connection: any, soql: string) {
 export async function deleteAllTraceFlagsExceptCurrent() {
     try {
         const provider = await getLogDataProvider();
-        const connection = provider.connection;
         const currentUserId = await provider.getCurrentUserId();
         // Query all trace flags except the current user's and the active ones
         const nowIso = new Date().toISOString();
-        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId FROM TraceFlag WHERE TracedEntityId != '${currentUserId}' AND ExpirationDate < ${nowIso}`), provider) as { records: any[] };
+        const traceFlagResult = await retryOnSessionExpire(async (conn) => await conn.tooling.query(`SELECT Id, TracedEntityId FROM TraceFlag WHERE LogType = 'DEVELOPER_LOG' AND TracedEntityId != '${currentUserId}' AND ExpirationDate < ${nowIso}`), provider) as { records: any[] };
         if (!traceFlagResult.records || traceFlagResult.records.length === 0) {
             vscode.window.showInformationMessage('No trace flags found to delete');
             return;
@@ -383,7 +401,7 @@ export async function deleteAllTraceFlagsExceptCurrent() {
         for (const tf of traceFlagResult.records) {
             await retryOnSessionExpire(async (conn) => await conn.tooling.delete('TraceFlag', tf.Id), provider);
         }
-        vscode.window.showInformationMessage('All trace flags deleted except the current user.');
+        vscode.window.showInformationMessage('Expired trace flags deleted except for the current user.');
     } catch (error: any) {
         const errorMessage = error?.message || 'Unknown error occurred';
         vscode.window.showErrorMessage(`Failed to delete trace flags: ${errorMessage}`);
@@ -395,4 +413,14 @@ async function setShowOutputOnStart(config: vscode.WorkspaceConfiguration, curre
     const newValue = !current;
     await config.update('showOutputOnStart', newValue, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`Show Output on Start set to ${newValue ? 'Enabled' : 'Disabled'}`);
+}
+
+export async function exportFilteredLogs() {
+    try {
+        const provider = await getLogDataProvider();
+        await provider.exportFilteredLogs();
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to export logs: ${errorMessage}`);
+    }
 }

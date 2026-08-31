@@ -3,14 +3,17 @@ class ApexLogDetails {
         this.vscode = acquireVsCodeApi();
         this.logLines = [];
         this.BUFFER_SIZE = 100;
-        this.ROW_HEIGHT = 22;
+        this.ROW_HEIGHT = 24;
         this.COLUMN_WIDTHS = ['17px', '60px', '150px', '30px', 'auto'];
         this.virtualState = {
             allRows: [],
+            visibleRows: [],
             collapsedBlocks: new Set(),
             lastScrollTop: 0
         };
         this.searchText = '';
+        this.summary = {};
+        this.scrollFrame = null;
         this.init();
     }
 
@@ -94,6 +97,8 @@ class ApexLogDetails {
         // Parsear datos
         const { rows } = this.parseLogLines(this.logLines, hideHeapAllocate, onlyUserDebug);
         this.virtualState.allRows = rows;
+        this.rebuildVisibleRows();
+        this.updateSummary(rows);
 
         // Establecer anchos de cabecera
         const headers = document.querySelectorAll('#log-table-header th');
@@ -107,7 +112,7 @@ class ApexLogDetails {
         contentContainer.innerHTML = '';
 
         // Establecer altura del contenedor
-        contentContainer.style.height = `${rows.length * this.ROW_HEIGHT}px`;
+        contentContainer.style.height = `${this.virtualState.visibleRows.length * this.ROW_HEIGHT}px`;
 
         // Renderizado inicial
         this.renderVisibleRows();
@@ -117,9 +122,7 @@ class ApexLogDetails {
         this.handleScrollBound = this.handleScroll.bind(this);
         viewport.addEventListener('scroll', this.handleScrollBound, { passive: true });
 
-        // Actualizar searchText si hay input
-        const searchInput = document.getElementById('log-search-input');
-        if (searchInput) this.searchText = searchInput.value.trim().toLowerCase();
+        this.syncHeaderScroll();
     }
 
     renderVisibleRows() {
@@ -130,7 +133,80 @@ class ApexLogDetails {
         const scrollTop = viewport.scrollTop;
         const viewportHeight = viewport.clientHeight;
 
-        // Filtrar solo las filas visibles (sin huecos)
+        const visibleRows = this.virtualState.visibleRows;
+        const totalRows = visibleRows.length;
+
+        // Calcular el rango visible para el scroll virtual
+        const startIndex = Math.max(0, Math.floor(scrollTop / this.ROW_HEIGHT) - this.BUFFER_SIZE);
+        const endIndex = Math.min(
+            totalRows,
+            Math.ceil((scrollTop + viewportHeight) / this.ROW_HEIGHT) + this.BUFFER_SIZE
+        );
+
+        // Limpiar contenido
+        container.innerHTML = '';
+        // Ajustar la altura del contenedor al número real de filas visibles
+        container.style.height = `${totalRows * this.ROW_HEIGHT}px`;
+
+        // Crear fragmento para mejor rendimiento
+        const fragment = document.createDocumentFragment();
+
+        // Renderizar solo las filas visibles
+        for (let i = startIndex; i < endIndex; i++) {
+            const row = visibleRows[i];
+            if (!row) continue;
+
+            const rowElement = document.createElement('div');
+            // Add eventType to classList for color coding
+            rowElement.className = `log-row ${row.type} ${row.eventType}`;
+            rowElement.style.top = `${i * this.ROW_HEIGHT}px`;
+            rowElement.setAttribute('role', 'row');
+
+            // Celda del botón de colapso
+            const collapseCell = document.createElement('div');
+            collapseCell.className = 'log-cell';
+            collapseCell.style.width = this.COLUMN_WIDTHS[0];
+            collapseCell.setAttribute('role', 'gridcell');
+            if (row.type === 'entry') {
+                const button = document.createElement('button');
+                button.className = 'collapse-btn';
+                const collapsed = this.virtualState.collapsedBlocks.has(row.blockId);
+                button.textContent = collapsed ? '▶' : '▼';
+                button.setAttribute('aria-expanded', (!collapsed).toString());
+                button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} method block`);
+                button.onclick = (e) => {
+                    e.stopPropagation();
+                    this.toggleCollapse(row.blockId);
+                };
+                collapseCell.appendChild(button);
+            }
+            rowElement.appendChild(collapseCell);
+
+            // Celdas de datos
+            [row.timestamp, row.eventType, row.lineNumber, row.details].forEach((text, colIndex) => {
+                const cell = document.createElement('div');
+                cell.className = 'log-cell';
+                cell.textContent = text || '';
+                cell.style.width = this.COLUMN_WIDTHS[colIndex + 1];
+                cell.setAttribute('role', 'gridcell');
+
+                if (colIndex === 3) {
+                    cell.style.flex = '1';
+                    if (row.depth > 0) {
+                        cell.style.paddingLeft = `${row.depth * 12 + 8}px`;
+                    }
+                }
+
+                rowElement.appendChild(cell);
+            });
+
+            fragment.appendChild(rowElement);
+        }
+
+        container.appendChild(fragment);
+    }
+
+    rebuildVisibleRows() {
         let filteredRows = this.virtualState.allRows;
         if (this.searchText) {
             filteredRows = filteredRows.filter(row => {
@@ -183,74 +259,7 @@ class ApexLogDetails {
             }
             visibleRows.push(row);
         }
-        const totalRows = visibleRows.length;
-
-        // Calcular el rango visible para el scroll virtual
-        const startIndex = Math.max(0, Math.floor(scrollTop / this.ROW_HEIGHT) - this.BUFFER_SIZE);
-        const endIndex = Math.min(
-            totalRows,
-            Math.ceil((scrollTop + viewportHeight) / this.ROW_HEIGHT) + this.BUFFER_SIZE
-        );
-
-        // Limpiar contenido
-        container.innerHTML = '';
-        // Ajustar la altura del contenedor al número real de filas visibles
-        container.style.height = `${totalRows * this.ROW_HEIGHT}px`;
-
-        // Crear fragmento para mejor rendimiento
-        const fragment = document.createDocumentFragment();
-
-        // Renderizar solo las filas visibles
-        for (let i = startIndex; i < endIndex; i++) {
-            const row = visibleRows[i];
-            if (!row) continue;
-
-            const rowElement = document.createElement('div');
-            // Add eventType to classList for color coding
-            rowElement.className = `log-row ${row.type} ${row.eventType}`;
-            rowElement.style.top = `${i * this.ROW_HEIGHT}px`;
-
-            // Celda del botón de colapso
-            const collapseCell = document.createElement('div');
-            collapseCell.className = 'log-cell';
-            collapseCell.style.width = this.COLUMN_WIDTHS[0];
-            if (row.type === 'entry') {
-                const button = document.createElement('button');
-                button.className = 'collapse-btn';
-                // Use icons or characters
-                button.textContent = this.virtualState.collapsedBlocks.has(row.blockId) ? '▶' : '▼';
-                button.onclick = (e) => {
-                    e.stopPropagation();
-                    this.toggleCollapse(row.blockId);
-                };
-                collapseCell.appendChild(button);
-            }
-            rowElement.appendChild(collapseCell);
-
-            // Celdas de datos
-            [row.timestamp, row.eventType, row.lineNumber, row.details].forEach((text, colIndex) => {
-                const cell = document.createElement('div');
-                cell.className = 'log-cell';
-                cell.textContent = text || '';
-                cell.style.width = this.COLUMN_WIDTHS[colIndex + 1];
-
-                // Details column (index 3) gets indentation
-                if (colIndex === 3) {
-                    cell.style.flex = '1';
-                    if (row.depth > 0) {
-                        cell.style.paddingLeft = `${row.depth * 12 + 8}px`; // 8px base padding + 12px per level
-                        // Optional: Add border-left for tree guide
-                        // cell.style.borderLeft = '1px solid var(--vscode-tree-indentGuidesStroke)'; 
-                    }
-                }
-
-                rowElement.appendChild(cell);
-            });
-
-            fragment.appendChild(rowElement);
-        }
-
-        container.appendChild(fragment);
+        this.virtualState.visibleRows = visibleRows;
     }
 
     toggleCollapse(blockId) {
@@ -259,11 +268,25 @@ class ApexLogDetails {
         } else {
             this.virtualState.collapsedBlocks.add(blockId);
         }
+        this.rebuildVisibleRows();
         this.renderVisibleRows();
     }
 
     handleScroll() {
-        requestAnimationFrame(() => this.renderVisibleRows());
+        this.syncHeaderScroll();
+        if (this.scrollFrame !== null) return;
+        this.scrollFrame = requestAnimationFrame(() => {
+            this.scrollFrame = null;
+            this.renderVisibleRows();
+        });
+    }
+
+    syncHeaderScroll() {
+        const viewport = document.getElementById('virtual-viewport');
+        const header = document.getElementById('log-table-header');
+        if (viewport && header) {
+            header.style.transform = `translateX(-${viewport.scrollLeft}px)`;
+        }
     }
 
     handleMessage(event) {
@@ -277,6 +300,10 @@ class ApexLogDetails {
     }
 
     handleDOMContentLoaded() {
+        const rowHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-height'));
+        if (Number.isFinite(rowHeight) && rowHeight > 0) {
+            this.ROW_HEIGHT = rowHeight;
+        }
         this.vscode.postMessage({ type: 'ready' });
         ['hide-heap-allocate', 'only-user-debug'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
@@ -290,8 +317,35 @@ class ApexLogDetails {
         if (searchInput) {
             searchInput.addEventListener('input', () => {
                 this.searchText = searchInput.value.trim().toLowerCase();
+                this.rebuildVisibleRows();
                 this.renderVisibleRows();
             });
+        }
+        document.getElementById('export-raw')?.addEventListener('click', () => {
+            this.vscode.postMessage({ type: 'export', format: 'raw' });
+        });
+        document.getElementById('export-summary')?.addEventListener('click', () => {
+            this.vscode.postMessage({ type: 'export', format: 'summary-json', summary: this.summary });
+        });
+    }
+
+    updateSummary(rows) {
+        const eventCounts = rows.reduce((counts, row) => {
+            counts[row.eventType] = (counts[row.eventType] || 0) + 1;
+            return counts;
+        }, {});
+        this.summary = {
+            totalLines: this.logLines.length,
+            parsedEvents: rows.length,
+            userDebug: eventCounts.USER_DEBUG || 0,
+            soql: (eventCounts.SOQL_EXECUTE_BEGIN || 0) + (eventCounts.SOQL_EXECUTE || 0),
+            dml: eventCounts.DML_BEGIN || 0,
+            exceptions: (eventCounts.EXCEPTION_THROWN || 0) + (eventCounts.FATAL_ERROR || 0),
+            methods: eventCounts.METHOD_ENTRY || 0
+        };
+        const strip = document.getElementById('summary-strip');
+        if (strip) {
+            strip.textContent = `${this.summary.parsedEvents} events · ${this.summary.userDebug} debug · ${this.summary.soql} SOQL · ${this.summary.dml} DML · ${this.summary.exceptions} exceptions`;
         }
     }
 

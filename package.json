@@ -20,18 +20,37 @@
     "development"
   ],
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.100.0",
+    "node": ">=20.0.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Debuggers",
     "Other"
   ],
-  "activationEvents": [
-    "onView:salesforceLogsView"
-  ],
   "main": "./out/extension.js",
   "icon": "src/images/extension_logo.png",
   "contributes": {
+    "languages": [
+      {
+        "id": "salesforce-apex-log",
+        "aliases": [
+          "Salesforce Apex Log"
+        ],
+        "filenamePatterns": [
+          "*_07L*.log"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "salesforce-apex-log",
+        "scopeName": "source.salesforce-apex-log",
+        "path": "./syntaxes/salesforce-apex-log.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "title": "Salesforce AG Log Viewer",
       "properties": {
@@ -61,6 +80,24 @@
           "type": "boolean",
           "default": true,
           "description": "Show the Salesforce AG Log Viewer output channel when the extension starts"
+        },
+        "salesforceAgLogViewer.largeLogWarningMb": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Ask before downloading logs at or above this size in MB"
+        },
+        "salesforceAgLogViewer.cacheMaxFiles": {
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "description": "Maximum number of downloaded logs retained in the workspace cache"
+        },
+        "salesforceAgLogViewer.cacheRetentionDays": {
+          "type": "number",
+          "default": 14,
+          "minimum": 1,
+          "description": "Maximum age in days for downloaded logs in the workspace cache"
         }
       }
     },
@@ -134,7 +171,7 @@
       },
       {
         "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
-        "title": "Delete All Trace Flags (Except Current User)",
+        "title": "Delete Expired Trace Flags (Except Current User)",
         "icon": "$(circle-slash)",
         "category": "Salesforce AG Log Viewer"
       },
@@ -142,6 +179,12 @@
         "command": "salesforce-ag-log-viewer.showLogDetails",
         "title": "Log Details",
         "icon": "$(list-flat)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.exportFilteredLogs",
+        "title": "Export Filtered Logs to CSV",
+        "icon": "$(export)",
         "category": "Salesforce AG Log Viewer"
       }
     ],
@@ -201,26 +244,28 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "node esbuild.js",
-    "watch": "tsc -watch -p ./",
-    "dev": "node esbuild.js --dev",
-    "pretest": "npm run dev && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "compile": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "eslint src vitest.config.ts --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "package:check": "npm run check && vsce package --no-dependencies --out salesforce-ag-log-viewer.vsix"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "@types/jsforce": "^1.11.5",
-    "@types/node": "22.x",
+    "@types/node": "20.x",
     "@types/vscode": "^1.100.0",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
     "@typescript-eslint/parser": "^8.32.1",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.4",
     "eslint": "^9.27.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@salesforce/core": "^8.11.3",
     "fs-extra": "^11.3.0",
     "jsforce": "^3.8.2"
   }

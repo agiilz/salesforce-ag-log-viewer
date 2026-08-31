@@ -2,6 +2,7 @@
     --row-height: 24px;
     --header-height: 28px;
     --filter-bar-height: 36px;
+    --summary-height: 28px;
     --font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
     --font-size: var(--vscode-editor-font-size, 13px);
     --border-color: var(--vscode-panel-border);
@@ -67,6 +68,7 @@ body, html {
     display: flex;
     align-items: center;
     position: relative;
+    gap: 6px;
 }
 
 .search-icon {
@@ -91,6 +93,55 @@ body, html {
     transition: border-color 0.2s;
 }
 
+.search-container button {
+    height: 24px;
+    padding: 2px 8px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 2px;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    font: inherit;
+    cursor: pointer;
+}
+
+.search-container button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+button:focus-visible,
+input:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: 1px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+#summary-strip {
+    position: absolute;
+    top: var(--filter-bar-height);
+    left: 0;
+    right: 0;
+    height: var(--summary-height);
+    box-sizing: border-box;
+    padding: 5px 12px;
+    color: var(--secondary-text);
+    background: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 #log-search-input:focus {
     border-color: var(--vscode-focusBorder);
 }
@@ -98,7 +149,7 @@ body, html {
 /* --- Table Container --- */
 #log-table-container {
     position: absolute;
-    top: var(--filter-bar-height);
+    top: calc(var(--filter-bar-height) + var(--summary-height));
     left: 0;
     right: 0;
     bottom: 0;
@@ -188,6 +239,7 @@ body, html {
     border-bottom: 1px solid transparent; /* Cleaner look */
     background: transparent;
     transition: background 0.1s;
+    box-sizing: border-box;
 }
 
 .log-row:hover {
@@ -204,6 +256,7 @@ body, html {
     text-overflow: ellipsis;
     display: flex;
     align-items: center;
+    box-sizing: border-box;
 }
 
 /* Vertical grid lines on hover or always? Let's keep it clean, no vertical lines by default */
@@ -275,3 +328,36 @@ body, html {
 .log-row[data-depth="1"] .log-cell:last-child { padding-left: 20px; }
 .log-row[data-depth="2"] .log-cell:last-child { padding-left: 40px; }
 /* ... dynamic padding would be better handled in JS style */
+
+@media (max-width: 760px) {
+    :root {
+        --filter-bar-height: 72px;
+    }
+
+    .filter-bar {
+        align-items: stretch;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+        box-sizing: border-box;
+    }
+
+    .filter-group,
+    .search-container {
+        min-width: 0;
+    }
+
+    #log-search-input {
+        flex: 1;
+        width: auto;
+        min-width: 100px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .log-row,
+    .collapse-btn,
+    #log-search-input {
+        transition: none;
+    }
+}

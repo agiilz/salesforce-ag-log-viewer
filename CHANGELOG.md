@@ -2,6 +2,24 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [Unreleased]
+### Added
+- Connection and last-refresh status, advanced local filters, favorites, older-log loading, CSV export, and built-in log comparison
+- Apex log syntax highlighting, log execution summaries, and raw/summary export
+- Configurable cache retention and a large-log preview choice
+- Unit tests for connection recovery, message validation, and log file handling
+
+### Fixed
+- Session-expiration reconnection, failed org-switch cache state, and recoverable activation without a configured org
+- Paginated and cancellable Tooling API log deletion without a hardcoded API version
+- Trace flag preservation, org-scoped keep-alive recovery, and live interval configuration
+- Failed download state, duplicate downloads, incomplete cached files, webview CSP/message validation, stale search debounce, and panel state restoration
+- Details virtual row sizing, horizontal header synchronization, and scroll rendering work
+
+### Changed
+- Builds now clean stale output, target Node 20, and exclude production source maps
+- Minimum supported VS Code version is documented as 1.100.0
+
 ## [1.2.5]
 ### Changed
 - Fix: Use `sf org auth show-access-token` to get the real access token (sf org display now redacts it)

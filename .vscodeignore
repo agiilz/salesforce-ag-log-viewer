@@ -1,11 +1,13 @@
 # Exclude all node_modules since we're bundling
 node_modules
+node_modules/**
 
 # Exclude source TypeScript files and maps
 src/**/*.ts
 src/**/*.map
 src/**/*.test.*
 src/**/*.spec.*
+src/test/**
 
 # Only include built webview assets and used images
 !src/images/extension_logo.png
@@ -16,6 +18,7 @@ src/**/*.spec.*
 !src/ApexLogDetails/ApexLogDetails.html
 !src/ApexLogDetails/ApexLogDetails.css
 !src/ApexLogDetails/ApexLogDetails.js
+!syntaxes/salesforce-apex-log.tmLanguage.json
 
 # Exclude VS Code and git config
 .vscode
@@ -24,15 +27,17 @@ src/**/*.spec.*
 
 # Exclude build/test/config files
 out/test
+out/**/*.map
 tsconfig.json
-README.md
-*.md
+package-lock.json
 *.yml
 *.yaml
-*.json
+vitest.config.ts
+eslint.config.mjs
 *.eslintrc*
 *.prettierrc*
 esbuild.js
+*.vsix
 
 # Exclude OS-specific files
 *.log

@@ -2,45 +2,75 @@ import { Connection } from 'jsforce';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
-import { outputChannel } from './extension';
+import { execFile } from 'child_process';
+import { outputChannel } from './outputChannel';
 
 let currentOrgUsername: string | undefined;
 let currentConnection: Connection | undefined;
+let pendingConnection: Promise<Connection> | undefined;
+let pendingOrgUsername: string | undefined;
+let connectionAttemptGeneration = 0;
+
+export function getConnectedOrgUsername(): string | undefined {
+    return currentOrgUsername;
+}
 
 //Obtenemos la conexion a la org de Salesforce
-export async function getConnection(): Promise<Connection> {
+export async function getConnection(forceRefresh: boolean = false): Promise<Connection> {
     const newOrgUsername = await getCurrentOrgFromConfig();
     if (!newOrgUsername) {
         throw new Error('No target org found in .sf/config.json');
     }
 
+    if (pendingConnection && pendingOrgUsername === newOrgUsername) {
+        return pendingConnection;
+    }
+
     //Si la org ha cambiado, crea una nueva conexion
-    if (!currentConnection || currentOrgUsername !== newOrgUsername) {
-        try {
-            await createConnection(newOrgUsername);
-        } catch (error: any) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage(`Failed to connect to Salesforce: ${errorMessage}`);
-            throw error;
+    if (!forceRefresh && currentConnection && currentOrgUsername === newOrgUsername) {
+        return currentConnection;
+    }
+
+    if (forceRefresh && currentOrgUsername === newOrgUsername) {
+        currentConnection = undefined;
+    }
+
+    pendingOrgUsername = newOrgUsername;
+    const attemptGeneration = ++connectionAttemptGeneration;
+    const connectionAttempt = createConnection(newOrgUsername);
+    pendingConnection = connectionAttempt;
+
+    try {
+        const newConnection = await connectionAttempt;
+        if (attemptGeneration !== connectionAttemptGeneration) {
+            return getConnection(forceRefresh);
+        }
+        currentConnection = newConnection;
+        currentOrgUsername = newOrgUsername;
+        return newConnection;
+    } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        vscode.window.showErrorMessage(`Failed to connect to Salesforce: ${errorMessage}`);
+        throw error;
+    } finally {
+        if (pendingConnection === connectionAttempt) {
+            pendingConnection = undefined;
+            pendingOrgUsername = undefined;
         }
 
     }
-
-    return currentConnection!;
 }
 
 //Metodo para crear una nueva conexion a la org de Salesforce
-async function createConnection(newOrgUsername: string): Promise<void> {
+async function createConnection(newOrgUsername: string): Promise<Connection> {
 
     outputChannel.appendLine(`Org changed: ${currentOrgUsername} -> ${newOrgUsername}`);
-    currentOrgUsername = newOrgUsername;
 
     // Get org details and access token in parallel (sf startup is slow on Windows)
     const start = Date.now();
     const [orgDetailsResult, tokenResultResult] = await Promise.all([
-        executeCommand(`sf org display --json -o "${newOrgUsername}"`),
-        executeCommand(`sf org auth show-access-token --target-org "${newOrgUsername}" --json`)
+        executeCommand(['org', 'display', '--json', '-o', newOrgUsername]),
+        executeCommand(['org', 'auth', 'show-access-token', '--target-org', newOrgUsername, '--json'])
     ]);
     outputChannel.appendLine(`sf commands completed in ${Date.now() - start}ms`);
 
@@ -55,7 +85,7 @@ async function createConnection(newOrgUsername: string): Promise<void> {
         throw new Error(`Failed to get access token for ${newOrgUsername}`);
     }
 
-    currentConnection = new Connection({
+    return new Connection({
         instanceUrl: orgDetails.result.instanceUrl,
         accessToken: tokenResult.result.accessToken
     });
@@ -94,15 +124,21 @@ async function readTargetOrg(configPath: string, location: string): Promise<stri
             outputChannel.appendLine(`Found target org in ${location} config: ${config['target-org']}`);
             return config['target-org'];
         }
-    } catch {
-        outputChannel.appendLine(`Target org not found in ${location} config`);
+    } catch (error) {
+        const errorCode = (error as NodeJS.ErrnoException)?.code;
+        if (errorCode === 'ENOENT') {
+            outputChannel.appendLine(`Target org not found in ${location} config`);
+        } else {
+            const message = error instanceof Error ? error.message : String(error);
+            outputChannel.appendLine(`Could not read ${location} Salesforce config at ${configPath}: ${message}`);
+        }
     }
     return undefined;
 }
 
-function executeCommand(command: string): Promise<{ stdout: string, stderr: string }> {
+function executeCommand(args: string[]): Promise<{ stdout: string, stderr: string }> {
     return new Promise((resolve, reject) => {
-        exec(command, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (error: Error | null, stdout: string, stderr: string) => {
+        execFile('sf', args, { timeout: 90000, maxBuffer: 10 * 1024 * 1024 }, (error: Error | null, stdout: string, stderr: string) => {
             if (error) {
                 reject(error);
             } else {
@@ -117,20 +153,36 @@ function executeCommand(command: string): Promise<{ stdout: string, stderr: stri
  * @param fn The function to execute, which should use the current connection.
  * @param provider Optional LogDataProvider to update connection if needed.
  */
-export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Promise<T>, provider?: any): Promise<T> {
+export interface ConnectionProvider {
+    connection: Connection;
+    replaceConnection?: (connection: Connection) => void;
+}
+
+export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Promise<T>, provider?: ConnectionProvider): Promise<T> {
     let connection = provider?.connection ?? await getConnection();
     try {
         return await fn(connection);
-    } catch (error: any) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes('INVALID_SESSION_ID') || msg.includes('Session expired') || msg.includes('expired access token')) {
+    } catch (error: unknown) {
+        if (isExpiredSession(error)) {
             outputChannel.appendLine('Session expired, attempting to reconnect...');
-            const newConnection = await getConnection();
-            if (provider && typeof provider.updateConnection === 'function') {
-                await provider.updateConnection(newConnection);
+            const newConnection = await getConnection(true);
+            if (provider?.replaceConnection) {
+                provider.replaceConnection(newConnection);
+            } else if (provider) {
+                provider.connection = newConnection;
             }
             return await fn(newConnection);
         }
         throw error;
     }
+}
+
+function isExpiredSession(error: unknown): boolean {
+    const errorWithCode = error as { errorCode?: unknown; code?: unknown; message?: unknown };
+    if (errorWithCode?.errorCode === 'INVALID_SESSION_ID' || errorWithCode?.code === 'INVALID_SESSION_ID') {
+        return true;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    return /INVALID_SESSION_ID|Session expired|expired access token/i.test(message);
 }

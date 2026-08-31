@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Harness</title>
+    <link rel="stylesheet" href="../../ApexLogPanel/ApexLogPanel.css">
+</head>
+<body>
+    <div class="panel-toolbar">
+        <div class="connection-status" role="status" aria-live="polite">
+            <span id="connection-indicator" class="status-indicator"></span>
+            <span id="active-org">Connecting...</span>
+            <span id="log-count"></span>
+            <span id="last-refresh"></span>
+        </div>
+        <div class="filter-controls" aria-label="Log filters">
+            <label class="sr-only" for="status-filter">Status</label>
+            <select id="status-filter" title="Filter by status"><option value="">All statuses</option></select>
+            <label class="sr-only" for="user-filter">User</label>
+            <select id="user-filter" title="Filter by user"><option value="">All users</option></select>
+            <button id="favorites-filter" class="icon-button" type="button" aria-pressed="false" title="Show favorites only">☆</button>
+            <button id="regex-filter" class="icon-button text-icon" type="button" aria-pressed="false" title="Use regular expression search">.*</button>
+            <button id="advanced-filter-toggle" class="icon-button text-icon" type="button" aria-expanded="false" title="Show advanced filters">≡</button>
+            <button id="compare-button" type="button" disabled>Compare</button>
+            <button id="export-filtered" class="icon-button text-icon" type="button">⇩</button>
+        </div>
+    </div>
+    <div id="advanced-filters" hidden>
+        <label>From <input id="date-filter" type="date"></label>
+        <label>Min duration <input id="duration-filter" type="number" min="0" step="100" placeholder="ms"></label>
+        <label>Min size <input id="size-filter" type="number" min="0" step="1" placeholder="KB"></label>
+        <label><input id="exceptions-filter" type="checkbox"> Exceptions only</label>
+        <button id="clear-advanced-filters" type="button">Clear</button>
+    </div>
+    <div class="grid" role="grid" aria-label="Salesforce Apex logs" aria-busy="true">
+        <div class="grid-header-container"><div class="grid-row grid-header" id="grid-header" role="row">
+            <div class="grid-cell action-cell" data-field="actions" role="columnheader"></div>
+            <div class="grid-cell" data-field="user">User</div><div class="grid-cell" data-field="time">Time</div>
+            <div class="grid-cell" data-field="status">Status</div><div class="grid-cell" data-field="size">Size</div>
+            <div class="grid-cell" data-field="operation">Operation</div><div class="grid-cell" data-field="duration">Duration</div>
+        </div></div>
+        <div class="grid-body" id="grid-body" role="rowgroup"></div>
+        <div class="load-older-bar"><button id="load-older" type="button" hidden>Load 100 older logs</button></div>
+        <div id="inline-search-bar"><label class="sr-only" for="inline-search-input">Filter logs</label><input id="inline-search-input" type="search"></div>
+    </div>
+    <script>
+        const outbound = [];
+        const state = {};
+        window.acquireVsCodeApi = () => ({
+            postMessage(message) {
+                outbound.push(message);
+                if (message.command === 'ready') {
+                    queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { data: sampleUpdate })));
+                }
+            },
+            getState: () => state.value,
+            setState: value => { state.value = value; }
+        });
+        window.__outbound = outbound;
+        const rows = [
+            { id: '07L000000000001', user: 'Ada Lovelace', time: '10:20:30|||10:20:30 31/08/2026|||1788171630000', status: 'Success', favorite: true, uiStatus: '', size: '   1.0 KB', operation: 'Execute Anonymous', duration: '   125 ms' },
+            { id: '07L000000000002', user: 'Grace Hopper', time: '10:19:00|||10:19:00 31/08/2026|||1788171540000', status: 'Failed', favorite: false, uiStatus: '', size: '   8.2 KB', operation: 'ApexException: sample failure', duration: '  1.20 s' },
+            { id: '07L000000000003', user: 'Ada Lovelace', time: '10:18:00|||10:18:00 31/08/2026|||1788171480000', status: 'Success', favorite: false, uiStatus: '', size: ' 250.0 KB', operation: 'Batch Apex', duration: '  4.50 s' }
+        ];
+        const sampleUpdate = { type: 'updateData', data: rows, isAutoRefresh: false, errorInfo: null, meta: { activeOrg: 'https://example.my.salesforce.com', lastSuccessfulRefresh: '2026-08-31T10:20:31Z', loadedCount: 3, visibleCount: 3, hasMore: true, filters: { text: '', useRegex: false, status: '', user: '', favoritesOnly: false, dateFrom: '', minimumDurationMs: 0, minimumSizeKb: 0, exceptionsOnly: false }, users: ['Ada Lovelace', 'Grace Hopper'], statuses: ['Failed', 'Success'] } };
+    </script>
+    <script src="../../ApexLogPanel/ApexLogPanel.js"></script>
+</body>
+</html>

@@ -2,30 +2,34 @@ import * as vscode from 'vscode';
 import { LogDataProvider } from '../ApexLogDataProvider';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomBytes } from 'crypto';
 import { openLog } from '../extension';
+import { HostToPanelMessage, parsePanelMessage } from '../webviewMessages';
 
 import { IApexLogPanelProvider } from './IApexLogPanelProvider';
 
 export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLogPanelProvider {
     private _view?: vscode.WebviewView;
-    private readonly _logDataProvider: LogDataProvider;
+    private _logDataProvider?: LogDataProvider;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
-        logDataProvider: LogDataProvider
-    ) {
-        this._logDataProvider = logDataProvider;
-    } public async refresh(): Promise<void> {
-        if (this._logDataProvider) {
+        private readonly _getLogDataProvider: () => Promise<LogDataProvider>
+    ) { } public async refresh(): Promise<void> {
+        try {
+            const logDataProvider = await this.getLogDataProvider();
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: 'Refreshing Salesforce logs...',
                 cancellable: false
             }, async () => {
-                await this._logDataProvider.refreshLogs(false, true);
+                await logDataProvider.refreshLogs(false, true);
             });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.updateView([], false, { hasError: true, message });
         }
-    } public postMessage(message: any) {
+    } public postMessage(message: HostToPanelMessage) {
         if (this._view) {
             this._view.webview.postMessage(message);
         }
@@ -39,32 +43,32 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
      * Update the panel view. If errorInfo is provided, send it to the webview for fallback UI.
      */
     public updateView(data?: any[], isAutoRefresh: boolean = false, errorInfo?: { hasError: boolean, message?: string }) {
-        const gridData = data || this._logDataProvider?.getGridData();
+        const gridData = data || this._logDataProvider?.getGridData() || [];
         this.postMessage({
             type: 'updateData',
             data: gridData,
             isAutoRefresh: isAutoRefresh,
-            errorInfo: errorInfo || null
+            errorInfo: errorInfo || null,
+            meta: this._logDataProvider?.getPanelMeta()
         });
     }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken,
+        token: vscode.CancellationToken,
     ) {
+        if (token.isCancellationRequested) {
+            return;
+        }
         this._view = webviewView;
 
-        this._logDataProvider.setPanelVisibility(webviewView.visible);
-        // Always load logs when panel becomes visible, regardless of auto-refresh setting
-        if (webviewView.visible) {
-            // Don't await here to avoid blocking webview setup
-            this._logDataProvider.refreshLogs(true, false);
-        }
-
         webviewView.onDidChangeVisibility(async () => {
-            this._logDataProvider.setPanelVisibility(webviewView.visible);
-            if (webviewView.visible) {
+            if (token.isCancellationRequested) {
+                return;
+            }
+            this._logDataProvider?.setPanelVisibility(webviewView.visible);
+            if (webviewView.visible && this._logDataProvider) {
                 await this.refresh();
             }
         });
@@ -72,7 +76,7 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [
-                this._extensionUri
+                vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel')
             ]
         };
 
@@ -83,17 +87,27 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
             vscode.Uri.joinPath(this._extensionUri, 'src', 'ApexLogPanel', 'ApexLogPanel.css')
         );
 
-        webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);
-        webviewView.webview.onDidReceiveMessage(async (message) => {
+        webviewView.webview.html = this.getHtmlForWebview(webviewView.webview, scriptUri, styleUri);
+        webviewView.webview.onDidReceiveMessage(async (rawMessage) => {
+            if (token.isCancellationRequested) {
+                return;
+            }
+            const message = parsePanelMessage(rawMessage);
+            if (!message) {
+                return;
+            }
+            try {
             if (message.command === 'ready') {
                 let initialData: any[] = [];
                 let errorInfo: { hasError: boolean, message?: string } | null = null;
                 try {
-                    initialData = this._logDataProvider?.getGridData();
+                    const logDataProvider = await this.getLogDataProvider();
+                    logDataProvider.setPanelVisibility(webviewView.visible);
+                    initialData = logDataProvider.getGridData();
                     // If no data available, force a refresh
                     if (!initialData || initialData.length === 0) {
-                        await this._logDataProvider.refreshLogs(true, false);
-                        initialData = this._logDataProvider?.getGridData();
+                        await logDataProvider.refreshLogs(true, false);
+                        return;
                     }
                 } catch (err: any) {
                     // Detect common error causes
@@ -110,20 +124,49 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
                 }
             } else if (message.command === 'inlineSearch') {
                 try {
-                    this._logDataProvider?.setSearchFilter(message.text);
-                    this.updateView();
+                    const logDataProvider = await this.getLogDataProvider();
+                    logDataProvider.setSearchFilter(message.text);
                 } catch (err: any) {
                     this.updateView([], false, { hasError: true, message: err?.message || 'Search failed.' });
                 }
+            } else if (message.command === 'setFilters') {
+                const logDataProvider = await this.getLogDataProvider();
+                logDataProvider.setFilters(message.filters);
+            } else if (message.command === 'toggleFavorite') {
+                const logDataProvider = await this.getLogDataProvider();
+                await logDataProvider.toggleFavorite(message.logId);
+            } else if (message.command === 'loadOlder') {
+                const logDataProvider = await this.getLogDataProvider();
+                await logDataProvider.loadOlder();
+            } else if (message.command === 'compareLogs') {
+                const logDataProvider = await this.getLogDataProvider();
+                await logDataProvider.compareLogs(message.logIds);
+            } else if (message.command === 'exportFilteredLogs') {
+                const logDataProvider = await this.getLogDataProvider();
+                await logDataProvider.exportFilteredLogs();
+            }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                vscode.window.showErrorMessage(`Salesforce Logs: ${errorMessage}`);
             }
         });
     }
 
-    private getHtmlForWebview(scriptUri: vscode.Uri, styleUri: vscode.Uri) {
+    private async getLogDataProvider(): Promise<LogDataProvider> {
+        if (!this._logDataProvider) {
+            this._logDataProvider = await this._getLogDataProvider();
+        }
+        return this._logDataProvider;
+    }
+
+    private getHtmlForWebview(webview: vscode.Webview, scriptUri: vscode.Uri, styleUri: vscode.Uri) {
         const templatePath = path.join(this._extensionUri.fsPath, 'src', 'ApexLogPanel', 'ApexLogPanel.html');
         let template = fs.readFileSync(templatePath, 'utf8');
+        const nonce = randomBytes(16).toString('base64');
         template = template.replace('${scriptUri}', scriptUri.toString());
         template = template.replace('${styleUri}', styleUri.toString());
+        template = template.split('${nonce}').join(nonce);
+        template = template.replace('${cspSource}', webview.cspSource);
         return template;
     }
 }

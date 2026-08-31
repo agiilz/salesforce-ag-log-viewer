@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource}; style-src-attr 'unsafe-inline'; script-src 'nonce-${nonce}';">
     <title>Log Details</title>
     <link rel="stylesheet" type="text/css" href="${styleUri}">
 </head>
@@ -20,10 +22,14 @@
             </label>
         </div>
         <div class="search-container">
-            <span class="search-icon">🔍</span>
-            <input id="log-search-input" type="text" placeholder="Search logs..." class="vscode-input">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <label class="sr-only" for="log-search-input">Search log details</label>
+            <input id="log-search-input" type="search" placeholder="Search logs..." class="vscode-input">
+            <button id="export-raw" type="button">Export log</button>
+            <button id="export-summary" type="button">Export summary</button>
         </div>
     </div>
+    <div id="summary-strip" role="status" aria-live="polite"></div>
     <div id="log-table-container">
         <div class="table-header-sticky">
             <div id="log-table-header-wrapper">
@@ -44,6 +50,6 @@
             <div id="content-container"></div>
         </div>
     </div>
-    <script src="${scriptUri}"></script>
+    <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>

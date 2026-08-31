@@ -1,4 +1,8 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
+
+const isProduction = process.argv.includes('--production');
+const isWatch = process.argv.includes('--watch');
 
 const baseConfig = {
     bundle: true,
@@ -6,24 +10,32 @@ const baseConfig = {
     format: 'cjs',
     loader: { '.ts': 'ts' },
     logLevel: 'info',
-    minify: true,
-    outdir: 'out',
+    minify: isProduction,
+    outfile: 'out/extension.js',
     platform: 'node',
-    sourcemap: true,
-    target: 'node14',  // Match your engine.node version
+    sourcemap: !isProduction,
+    target: 'node20',
 };
 
-// Build the extension
-esbuild.buildSync({
-    ...baseConfig,
-    entryPoints: ['./src/extension.ts'],
-});
+async function build() {
+    if (!isWatch) {
+        fs.rmSync('out', { recursive: true, force: true });
+    }
 
-// We don't bundle test files in production
-if (process.argv.includes('--dev')) {
-    esbuild.buildSync({
+    if (isWatch) {
+        const context = await esbuild.context({
+            ...baseConfig,
+            entryPoints: ['./src/extension.ts'],
+        });
+        await context.watch();
+        console.log('Watching extension sources...');
+        return;
+    }
+
+    await esbuild.build({
         ...baseConfig,
-        entryPoints: ['./src/test/**/*.ts'],
-        outdir: 'out/test',
+        entryPoints: ['./src/extension.ts'],
     });
 }
+
+build().catch(() => process.exit(1));

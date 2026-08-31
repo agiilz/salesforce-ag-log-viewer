@@ -8,7 +8,10 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 - Real-time log monitoring with auto-refresh capability
 - Sortable and customizable column layout
 - Visual indicators for unread and downloading logs
-- Search functionality by User/Operation for quick log filtering
+- Search by user/operation, including optional regular expressions
+- Filters for user, status, date, duration, size, exceptions, and favorites
+- Load older logs in bounded 100-record increments
+- Export the filtered log list to CSV and compare two logs in VS Code's diff editor
 - Opening and downloading logs from your Salesforce Org
 - Option to clear all debug logs from your org
 - Filter logs displayed by current user or view logs from all users
@@ -20,6 +23,8 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 - Instantly filter to show only USER_DEBUG statements for focused debugging
 - Search within log details for specific events, operations, or debug output
 - Collapse and expand method blocks for easier navigation of large logs
+- Execution summary for debug, SOQL, DML, method, and exception events
+- Export the raw log or its summary as JSON
   
 ![Captura de pantalla 2025-06-18 112620](https://github.com/user-attachments/assets/716e1df9-3786-4f35-bd4e-c2db7ba09d38)
 
@@ -28,6 +33,8 @@ A Visual Studio Code extension for viewing and managing Salesforce debug logs wi
 - GZIP compression support for large log files
 - Background log processing for smooth UI experience
 - Smart state preservation during auto-refresh when scrolling
+- Configurable local cache retention by age and file count
+- Large-log warning with a first-1,000-line in-memory preview option
 
 ### 🏳️ Trace Flag Management
 - View and clear all expired trace flags from your org with a single click
@@ -47,13 +54,13 @@ Extension Preview:
 
 ## Requirements
 
-* Visual Studio Code 1.60.0 or higher
+* Visual Studio Code 1.100.0 or higher
 * Salesforce CLI
 * Active Salesforce org connection
 
 ## Installation
 
-1. Install Visual Studio Code 1.60.0 or higher
+1. Install Visual Studio Code 1.100.0 or higher
 2. Install the Salesforce CLI
 3. Install this extension from the VS Code marketplace
 4. Authenticate with your Salesforce org inside VSCode
@@ -81,10 +88,11 @@ The extension provides several settings to customize your log viewing experience
 - `salesforceAgLogViewer.currentUserOnly`: If enabled, only logs belonging to the currently authenticated Salesforce user are shown. Disable to view logs from all users.
 - `salesforceAgLogViewer.traceFlagExpirationInterval`: Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Default: 15.
 - `salesforceAgLogViewer.showOutputOnStart`: Show the Salesforce AG Log Viewer output channel when the extension starts. Default: true.
+- `salesforceAgLogViewer.largeLogWarningMb`: Ask before downloading uncached logs at or above this size. Default: 5 MB.
+- `salesforceAgLogViewer.cacheMaxFiles`: Maximum downloaded logs retained in the workspace cache. Default: 100.
+- `salesforceAgLogViewer.cacheRetentionDays`: Maximum downloaded-log cache age. Default: 14 days.
 
-## Future Improvements
-
-   * Add Salesforce Log colorizer
+Salesforce Apex logs use the included syntax highlighting automatically. In remote workspaces, install and authenticate the Salesforce CLI in the remote environment where the extension runs.
 
 ## Release Notes
 

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Details Harness</title>
+    <link rel="stylesheet" href="../../ApexLogDetails/ApexLogDetails.css">
+</head>
+<body>
+    <div class="filter-bar">
+        <div class="filter-group">
+            <label class="checkbox-container"><input type="checkbox" id="hide-heap-allocate" checked><span class="checkmark"></span>Hide HEAP_ALLOCATE</label>
+            <label class="checkbox-container"><input type="checkbox" id="only-user-debug"><span class="checkmark"></span>Show Debug Logs</label>
+        </div>
+        <div class="search-container"><span class="search-icon" aria-hidden="true">⌕</span><label class="sr-only" for="log-search-input">Search</label><input id="log-search-input" type="search" placeholder="Search logs..." class="vscode-input"><button id="export-raw">Export log</button><button id="export-summary">Export summary</button></div>
+    </div>
+    <div id="summary-strip" role="status" aria-live="polite"></div>
+    <div id="log-table-container"><div class="table-header-sticky"><div id="log-table-header-wrapper"><table id="log-table-header"><thead><tr><th></th><th>Time</th><th>Event</th><th>Line</th><th>Details</th></tr></thead></table></div></div><div id="virtual-viewport"><div id="content-container"></div></div></div>
+    <script>
+        const outbound = [];
+        const lines = [];
+        for (let i = 0; i < 1500; i++) {
+            if (i % 100 === 0) lines.push(`10:20:${String(i % 60).padStart(2, '0')}.0|METHOD_ENTRY|[${i + 1}]|Example.run`);
+            else if (i % 100 === 99) lines.push(`10:20:${String(i % 60).padStart(2, '0')}.0|METHOD_EXIT|[${i + 1}]|Example.run`);
+            else if (i % 25 === 0) lines.push(`10:20:${String(i % 60).padStart(2, '0')}.0|USER_DEBUG|[${i + 1}]|DEBUG|sample ${i}`);
+            else if (i % 40 === 0) lines.push(`10:20:${String(i % 60).padStart(2, '0')}.0|SOQL_EXECUTE_BEGIN|[${i + 1}]|SELECT Id FROM Account`);
+            else lines.push(`10:20:${String(i % 60).padStart(2, '0')}.0|HEAP_ALLOCATE|[${i + 1}]|Bytes:4`);
+        }
+        window.acquireVsCodeApi = () => ({ postMessage(message) { outbound.push(message); if (message.type === 'ready') queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'loadLog', logContent: lines.join('\n'), fileName: 'sample.log' } }))); } });
+        window.__outbound = outbound;
+    </script>
+    <script src="../../ApexLogDetails/ApexLogDetails.js"></script>
+</body>
+</html>
