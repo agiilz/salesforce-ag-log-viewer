@@ -2,7 +2,7 @@
   "name": "salesforce-ag-log-viewer",
   "displayName": "Salesforce Logs",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "publisher": "aGxLabs",
   "author": {
     "name": "Adrià Gil"
@@ -27,7 +27,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:salesforceLogsView"
+    "onView:salesforceLogsView",
+    "onCommand:salesforce-ag-log-viewer.retryConnection"
   ],
   "main": "./out/extension.js",
   "icon": "src/images/extension_logo.png",
@@ -91,6 +92,12 @@
         "category": "Salesforce AG Log Viewer"
       },
       {
+        "command": "salesforce-ag-log-viewer.retryConnection",
+        "title": "Retry Salesforce Connection",
+        "icon": "$(debug-restart)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
         "command": "salesforce-ag-log-viewer.toggleCurrentUserOnly",
         "title": "Log Visibility",
         "icon": "$(person)",
@@ -147,6 +154,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "salesforce-ag-log-viewer.retryConnection",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@0"
+        },
         {
           "command": "salesforce-ag-log-viewer.showSearchBox",
           "when": "view == salesforceLogsView",

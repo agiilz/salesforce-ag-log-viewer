@@ -345,7 +345,24 @@
             errorMsg.style.margin = '32px auto';
             errorMsg.style.maxWidth = '500px';
             errorMsg.style.padding = '24px';
-            errorMsg.innerHTML = `<b>Something went wrong.</b><br><span style='color:var(--vscode-descriptionForeground);font-size:1em;'>Check the output channel for details.<br>To retry, please click the <b>Refresh</b> button.</span>`;
+            errorMsg.innerHTML = `<b>Something went wrong.</b><br><span style='color:var(--vscode-descriptionForeground);font-size:1em;'>Check the output channel for details, then try connecting again.</span>`;
+            const retryButton = document.createElement('button');
+            retryButton.type = 'button';
+            retryButton.textContent = 'Try to connect again';
+            retryButton.style.display = 'block';
+            retryButton.style.margin = '16px auto 0';
+            retryButton.style.padding = '6px 12px';
+            retryButton.style.color = 'var(--vscode-button-foreground)';
+            retryButton.style.background = 'var(--vscode-button-background)';
+            retryButton.style.border = 'none';
+            retryButton.style.borderRadius = '2px';
+            retryButton.style.cursor = 'pointer';
+            retryButton.onclick = () => {
+                retryButton.disabled = true;
+                retryButton.textContent = 'Connecting...';
+                vscode.postMessage({ command: 'retryConnection' });
+            };
+            errorMsg.appendChild(retryButton);
             gridBody.appendChild(errorMsg);
             return;
         }

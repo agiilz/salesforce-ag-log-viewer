@@ -2,6 +2,17 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.6]
+### Fixed
+- Replaced slow Salesforce CLI authentication subprocesses with direct Salesforce Core auth loading.
+- Added validated connection startup with bounded retries and working expired-session refresh.
+- Made failed activation recoverable without reloading VS Code.
+
+### Added
+- Added a **Retry Salesforce Connection** command, panel action, and error notification action.
+- Automatically retries when a target-org configuration file is created or changed.
+- Improved the log panel layout for narrow and resized VS Code panels.
+
 ## [1.2.5]
 ### Changed
 - Fix: Use `sf org auth show-access-token` to get the real access token (sf org display now redacts it)

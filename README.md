@@ -66,6 +66,8 @@ Extension Preview:
 3. Your debug logs will automatically appear in the viewer
 4. Click the button "Log Details" in the top right corner
 
+If the org is not ready while VS Code is starting, use **Salesforce AG Log Viewer: Retry Salesforce Connection** from the Command Palette or the retry button in the Salesforce Logs panel. The extension reloads the saved Salesforce authentication and reconnects without requiring a VS Code window reload.
+
 
 ### Visual Indicators
 - 🟢 Green dot: Unread log

@@ -115,6 +115,8 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
                 } catch (err: any) {
                     this.updateView([], false, { hasError: true, message: err?.message || 'Search failed.' });
                 }
+            } else if (message.command === 'retryConnection') {
+                await vscode.commands.executeCommand('salesforce-ag-log-viewer.retryConnection');
             }
         });
     }

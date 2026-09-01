@@ -11,6 +11,9 @@ import { ApexLogDetails } from './ApexLogDetails/ApexLogDetails';
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
 let activeProvider: ApexLogPanelProvider | undefined;
+let initializationPromise: Promise<void> | undefined;
+let extensionComponentsRegistered = false;
+let focusScheduled = false;
 export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -23,45 +26,122 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     outputChannel.appendLine('Activating Salesforce Log Viewer extension...');
 
-    // Register the ApexLogDetails command
+    // Register commands that must remain available even if the first connection
+    // attempt fails. This allows the user to recover without reloading VS Code.
     ApexLogDetails.registerCommand(context);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('salesforce-ag-log-viewer.retryConnection', retryConnection)
+    );
+
+    // Watch org configuration before connecting so creating/changing the target
+    // org after a failed activation can recover the extension automatically.
+    setupConfigFileWatchers(context);
 
     try {
-        //Creacion de los fileWatchers para comprobar cambios de org en el fichero de configuracion
-        setupConfigFileWatchers(context);
+        await initializeExtensionComponents();
+    } catch (error) {
+        reportConnectionFailure('Activation', error);
+    }
+}
 
-        // Use getLogDataProvider to ensure provider is initialized
-        const provider = new ApexLogPanelProvider(context.extensionUri, await getLogDataProvider());
-        activeProvider = provider;
+async function initializeExtensionComponents(forceReconnect: boolean = false): Promise<void> {
+    if (extensionComponentsRegistered) {
+        if (forceReconnect && logDataProvider) {
+            const connection = await getConnection({ forceRefresh: true });
+            await logDataProvider.updateConnection(connection);
+        }
+        return;
+    }
 
-        // Set the active provider on the LogDataProvider
-        (await getLogDataProvider()).setActiveProvider(provider);
+    if (initializationPromise) {
+        return initializationPromise;
+    }
 
-        context.subscriptions.push(
-            vscode.window.registerWebviewViewProvider('salesforceLogsView', provider)
+    initializationPromise = (async () => {
+        const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+        const connection = await getConnection({ forceRefresh: forceReconnect });
+        const dataProvider = await LogDataProvider.create(
+            extensionContext,
+            connection,
+            {
+                autoRefresh: config.get('autoRefresh') ?? true,
+                refreshInterval: config.get('refreshInterval') ?? 5000,
+                currentUserOnly: config.get('currentUserOnly') ?? true
+            }
+        );
+        const panelProvider = new ApexLogPanelProvider(extensionContext.extensionUri, dataProvider);
+
+        dataProvider.setActiveProvider(panelProvider);
+        logDataProvider = dataProvider;
+        activeProvider = panelProvider;
+
+        extensionContext.subscriptions.push(
+            vscode.window.registerWebviewViewProvider('salesforceLogsView', panelProvider),
+            dataProvider.onDidChangeData(({ data, isAutoRefresh }) => {
+                panelProvider.updateView(data, isAutoRefresh);
+            })
         );
 
-        //Registrar los comandos de la extension
-        registerCommands(context, provider);
-
-        //Suscribirse a eventos de cambio de datos del LogDataProvider
-        (await getLogDataProvider()).onDidChangeData(({ data, isAutoRefresh }) => {
-            provider.updateView(data, isAutoRefresh);
-        });
-
+        registerCommands(extensionContext, panelProvider);
+        extensionComponentsRegistered = true;
         outputChannel.appendLine('Extension activation complete');
 
-        //TODO: setting para mostrar el panel de logs al activarse o no
-        setTimeout(() => {
-            vscode.commands.executeCommand('salesforceLogsView.focus');
-        }, 500); //Delay antes de cerrar el output panel
+        if (!focusScheduled) {
+            focusScheduled = true;
+            setTimeout(() => {
+                void vscode.commands.executeCommand('salesforceLogsView.focus');
+            }, 500);
+        }
+    })();
 
+    try {
+        await initializationPromise;
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        outputChannel.appendLine(`Activation error: ${errorMessage}`);
-        console.error('Activation error:', error);
-        vscode.window.showErrorMessage(`Failed to initialize Salesforce Log Viewer: ${errorMessage}`);
+        // A partially created provider has not been registered at this point, so
+        // clear it and allow the Retry Connection command to start cleanly.
+        logDataProvider?.dispose();
+        logDataProvider = undefined;
+        activeProvider = undefined;
+        throw error;
+    } finally {
+        initializationPromise = undefined;
     }
+}
+
+export async function retryConnection(): Promise<void> {
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Connecting to Salesforce...',
+        cancellable: false
+    }, async () => {
+        try {
+            stopTraceFlagKeepAlive();
+            await initializeExtensionComponents(true);
+            activeProvider?.postMessage({ type: 'connectionRestored' });
+            outputChannel.appendLine('Salesforce connection restored successfully');
+            vscode.window.showInformationMessage('Salesforce Log Viewer connected successfully.');
+        } catch (error) {
+            reportConnectionFailure('Retry connection', error);
+        }
+    });
+}
+
+function reportConnectionFailure(context: string, error: unknown): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`${context} error: ${errorMessage}`);
+    console.error(`${context} error:`, error);
+
+    void vscode.window.showErrorMessage(
+        `Salesforce Log Viewer could not connect: ${errorMessage}`,
+        'Try Again',
+        'Show Output'
+    ).then(selection => {
+        if (selection === 'Try Again') {
+            void vscode.commands.executeCommand('salesforce-ag-log-viewer.retryConnection');
+        } else if (selection === 'Show Output') {
+            outputChannel.show(true);
+        }
+    });
 }
 
 function setupConfigFileWatchers(context: vscode.ExtensionContext) {
@@ -82,31 +162,21 @@ function setupConfigFileWatchers(context: vscode.ExtensionContext) {
 
 //Metodo para crear un watcher de cambios en el fichero de configuracion .sf/config.json
 function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
-    const watcher = vscode.workspace.createFileSystemWatcher(configPath);
+    const pattern = new vscode.RelativePattern(path.dirname(configPath), path.basename(configPath));
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    watcher.onDidChange(async () => {
+    const handleConfigChange = async () => {
         try {
+            stopTraceFlagKeepAlive();
             if (logDataProvider && activeProvider) {
-                // Always stop all trace flag keep-alive timers before switching orgs
-                stopTraceFlagKeepAlive();
-                //Mostrar notificacion de cambio de org si el panel esta visible
-                if (logDataProvider['isVisible']) { // Accessing private property isVisible via string index to avoid TS error if not exposed, but we should expose it or use a getter.
-                    // Actually isVisible is private in LogDataProvider.
-                    // We should add a public getter or method.
-                    // For now, let's assume we can access it or add a getter.
-                    // I'll add a getter to LogDataProvider in a separate step or just use the private access for now if it works in JS runtime (it does).
-                    // But for TS it might complain.
-                    // Let's check if I added a getter. No.
-                    // I'll use 'any' cast for now to avoid breaking changes in this file, or better, add the getter.
-                    // I'll add the getter in the next step if needed.
-
+                if (logDataProvider.isVisible) {
                     await vscode.window.withProgress({
                         location: vscode.ProgressLocation.Notification,
                         title: 'Switching org and retrieving logs',
                         cancellable: false
                     }, async (progress) => {
                         progress.report({ message: 'Updating connection...' });
-                        const newConnection = await getConnection();
+                        const newConnection = await getConnection({ forceRefresh: true });
                         await logDataProvider!.updateConnection(newConnection);
                         progress.report({ message: 'Refreshing logs...' });
                         await new Promise(res => setTimeout(res, 300));
@@ -115,17 +185,22 @@ function createConfigWatcher(configPath: string): vscode.FileSystemWatcher {
                     // Send orgChanged message to webview to close search bar
                     activeProvider.postMessage({ type: 'orgChanged' });
                 } else {
-                    // If not visible, just update connection and logs silently
-                    const newConnection = await getConnection();
+                    const newConnection = await getConnection({ forceRefresh: true });
                     await logDataProvider.updateConnection(newConnection);
                     outputChannel.appendLine('Updated connection and refreshed logs after org change (panel hidden)');
-
                 }
+            } else {
+                // Activation may have failed because this file or its auth did not
+                // exist yet. A create/change event is enough to retry in place.
+                await initializeExtensionComponents(true);
             }
         } catch (error) {
-            outputChannel.appendLine(`Error handling config file change: ${error}`);
+            reportConnectionFailure('Org configuration change', error);
         }
-    });
+    };
+
+    watcher.onDidChange(handleConfigChange);
+    watcher.onDidCreate(handleConfigChange);
     return watcher;
 }
 
@@ -165,19 +240,10 @@ export function deactivate() {
 //Obtener el provider de la extension con la configuracion y conexion actual
 export async function getLogDataProvider(): Promise<LogDataProvider> {
     if (!logDataProvider) {
-        // Create and initialize the log provider if it doesn't exist
-        const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-        const connection = await getConnection();
-        logDataProvider = await LogDataProvider.create(
-            extensionContext,
-            connection,
-            {
-                autoRefresh: config.get('autoRefresh') ?? true,
-                refreshInterval: config.get('refreshInterval') ?? 5000,
-                currentUserOnly: config.get('currentUserOnly') ?? true
-            }
-        );
-        outputChannel.appendLine('Log provider initialized (lazy)');
+        await initializeExtensionComponents();
+    }
+    if (!logDataProvider) {
+        throw new Error('Salesforce Log Viewer is not connected. Run "Retry Salesforce Connection".');
     }
     return logDataProvider;
 }

@@ -21,9 +21,14 @@ src/**/*.spec.*
 .vscode
 .git
 .gitignore
+.sfdx
+.sfdx/**
+.agents
+.codex
 
 # Exclude build/test/config files
-out/test
+out/**
+!out/extension.js
 tsconfig.json
 README.md
 *.md
@@ -33,6 +38,14 @@ README.md
 *.eslintrc*
 *.prettierrc*
 esbuild.js
+
+# Exclude local development and generated artifacts
+temp_test_dir
+temp_test_dir/**
+remove_duplicate_media.py
+.logs
+.logs/**
+*.vsix
 
 # Exclude OS-specific files
 *.log
