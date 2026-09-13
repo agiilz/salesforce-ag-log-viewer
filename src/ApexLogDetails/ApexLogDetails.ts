@@ -23,7 +23,7 @@ export class ApexLogDetails {
         outputChannel.appendLine(`[LogDetails] Creating webview for: ${fileName}`);
         const panel = vscode.window.createWebviewPanel(
             'apexLogDetails',
-            `Log Details: ${fileName.split('\\').pop()}`,
+            `Log Details: ${path.basename(fileName)}`,
             vscode.ViewColumn.Active,
             { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'src', 'ApexLogDetails')] }
         );
@@ -31,16 +31,29 @@ export class ApexLogDetails {
         let html = fs.readFileSync(htmlPath, 'utf8');
         const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'src', 'ApexLogDetails', 'ApexLogDetails.js'));
         const styleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'src', 'ApexLogDetails', 'ApexLogDetails.css'));
+        const parserUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'src', 'ApexLogDetails', 'ApexLogParser.js'));
         html = html.replace('${scriptUri}', scriptUri.toString());
         html = html.replace('${styleUri}', styleUri.toString());
-        panel.webview.html = html;
-        // Enviar logContent directamente tras setear el HTML
-        panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
-        // Soporte para recarga: si el webview pide el log, reenviarlo
-        panel.webview.onDidReceiveMessage((msg) => {
+        html = html.replace('${parserUri}', parserUri.toString());
+        html = html.replace(/\$\{cspSource\}/g, panel.webview.cspSource);
+        // Send once the document is ready, including after a hidden webview
+        // is recreated. Register before setting HTML to avoid a ready race.
+        let logLines: string[] | undefined;
+        const messages = panel.webview.onDidReceiveMessage(async (msg) => {
             if (msg && msg.type === 'ready') {
-                panel.webview.postMessage({ logContent, fileName: fileName.split('\\').pop() });
+                panel.webview.postMessage({ logContent, fileName: path.basename(fileName), logId: fileName });
+            } else if (msg?.type === 'copyLogLine' && Number.isInteger(msg.index) && msg.index >= 0) {
+                logLines ??= logContent.split(/\r?\n/);
+                if (msg.index >= logLines.length) return;
+                try {
+                    await vscode.env.clipboard.writeText(logLines[msg.index]);
+                    panel.webview.postMessage({ type: 'copyLogLineResult', index: msg.index, success: true });
+                } catch {
+                    panel.webview.postMessage({ type: 'copyLogLineResult', index: msg.index, success: false });
+                }
             }
         });
+        panel.onDidDispose(() => messages.dispose());
+        panel.webview.html = html;
     }
 }

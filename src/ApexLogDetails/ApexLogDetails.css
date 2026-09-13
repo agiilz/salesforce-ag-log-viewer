@@ -2,12 +2,6 @@
     --row-height: 24px;
     --header-height: 28px;
     --filter-bar-height: 36px;
-    --execution-height: 136px;
-    --execution-collapsed-height: 32px;
-    --execution-header-height: 32px;
-    --execution-axis-height: 22px;
-    --execution-track-height: 80px;
-    --execution-min-width: 720px;
     --font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
     --font-size: var(--vscode-editor-font-size, 13px);
     --border-color: var(--vscode-panel-border);
@@ -46,10 +40,12 @@ body {
 /* --- Filter Bar --- */
 .filter-bar {
     position: relative;
-    flex: 0 0 var(--filter-bar-height);
-    height: var(--filter-bar-height);
+    flex: 0 0 auto;
+    min-height: var(--filter-bar-height);
     min-height: 0;
-    padding: 0 12px;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
     background: var(--vscode-editor-background);
     z-index: 10;
     display: flex;
@@ -60,6 +56,7 @@ body {
 }
 
 .filter-group {
+    flex-wrap: wrap;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -81,6 +78,9 @@ body {
 }
 
 .search-container {
+    flex: 1 1 200px;
+    min-width: 100px;
+    max-width: 350px;
     display: flex;
     align-items: center;
     position: relative;
@@ -97,7 +97,7 @@ body {
 #log-search-input {
     padding: 4px 8px 4px 26px;
     height: 24px;
-    width: 250px;
+    width: 100%;
     border-radius: 2px;
     border: 1px solid var(--vscode-input-border);
     background: var(--vscode-input-background);
@@ -112,354 +112,135 @@ body {
     border-color: var(--vscode-focusBorder);
 }
 
-/* --- Compact execution flow --- */
+/* --- Execution flow: nested calls, independent event lanes, and inspection --- */
 .execution-panel {
+    --flow-unit: var(--vscode-symbolIcon-classForeground, #c586c0);
+    --flow-method: var(--vscode-symbolIcon-methodForeground, #7eaaee);
+    --flow-system: var(--vscode-descriptionForeground, #999999);
+    --flow-flow: var(--vscode-charts-cyan, #4ec9b0);
+    --flow-soql: var(--vscode-charts-orange, #ce9178);
+    --flow-dml: var(--vscode-charts-yellow, #dcdcaa);
     position: relative;
-    flex: 0 0 var(--execution-height);
+    flex: 0 0 auto;
+    height: 360px;
     min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--vscode-editor-background);
     border-bottom: 1px solid var(--border-color);
     overflow: hidden;
-    transition: flex-basis 0.16s ease;
+    font-family: var(--vscode-font-family, system-ui, sans-serif);
+    font-size: 12px;
 }
-
-.execution-panel.is-collapsed,
-.execution-panel.collapsed,
-.execution-panel[aria-expanded="false"] {
-    flex-basis: var(--execution-collapsed-height);
-}
-
-.execution-panel.is-collapsed .execution-content,
-.execution-panel.collapsed .execution-content,
-.execution-panel[aria-expanded="false"] .execution-content {
-    display: none;
-}
-
-.execution-panel.is-collapsed .execution-toggle-icon,
-.execution-panel.collapsed .execution-toggle-icon,
-.execution-panel[aria-expanded="false"] .execution-toggle-icon {
-    transform: rotate(-90deg);
-}
-
+.execution-panel.is-collapsed .execution-content { display: none; }
+.execution-panel.is-collapsed .execution-toggle-icon { transform: rotate(-90deg); }
 .execution-header {
-    flex: 0 0 var(--execution-header-height);
-    min-height: var(--execution-header-height);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 10px;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-color);
-}
-
-.execution-toggle,
-.execution-control,
-.execution-back {
-    border: 1px solid transparent;
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-color);
-    font: inherit;
-    cursor: pointer;
-}
-
-.execution-toggle {
-    display: inline-flex;
-    align-items: center;
     flex: 0 0 auto;
-    min-width: 0;
-    gap: 5px;
-    padding: 2px 4px 2px 1px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.execution-toggle:hover,
-.execution-control:hover,
-.execution-back:hover {
-    background: var(--hover-bg);
-}
-
-.execution-toggle:focus-visible,
-.execution-control:focus-visible,
-.execution-back:focus-visible,
-#execution-scroll:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder);
-    outline-offset: -1px;
-}
-
-.execution-toggle-icon {
-    display: inline-flex;
-    width: 14px;
-    height: 14px;
-    align-items: center;
-    justify-content: center;
-    color: var(--secondary-text);
-    font-size: 15px;
-    line-height: 12px;
-    transform: translateY(-1px);
-    transition: transform 0.16s ease;
-}
-
-.execution-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.execution-summary {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--secondary-text);
-    font-size: 0.88em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.execution-actions {
+    min-height: 36px;
     display: flex;
     align-items: center;
-    gap: 3px;
-    min-width: 0;
-    margin-left: auto;
+    gap: 10px;
+    padding: 4px 10px;
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+    border-bottom: 1px solid var(--border-color);
 }
+.execution-panel button {
+    font: inherit;
+    color: var(--text-color);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+.execution-panel button:hover:not(:disabled) { background: var(--hover-bg); }
+.execution-panel button:disabled { opacity: 0.4; cursor: default; }
+.execution-toggle { display: flex; gap: 6px; padding: 3px 0; align-items: center; white-space: nowrap; }
+.execution-title { font-weight: 650; letter-spacing: 0.1px; }
+.execution-toggle-icon { display: inline-block; color: var(--secondary-text); width: 12px; }
+.execution-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--secondary-text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.execution-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 2px; }
+.execution-control { min-width: 26px; height: 25px; padding: 0 5px; white-space: nowrap; }
+.execution-control.execution-issues { color: var(--vscode-errorForeground, var(--error-color)); font-size: 11px; }
+.execution-control.execution-issues:disabled { color: var(--secondary-text); opacity: 1; }
+.execution-control-divider { height: 14px; margin: 0 5px; border-left: 1px solid var(--border-color); }
+.execution-zoom-label { min-width: 24px; text-align: center; color: var(--secondary-text); font-size: 11px; }
+.execution-fit { font-size: 11px !important; }
+.execution-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.execution-navigation { display: flex; align-items: center; gap: 5px; flex: 0 0 30px; min-width: 0; padding: 0 10px; }
+.execution-breadcrumb { display: flex; flex: 1; min-width: 0; overflow: auto; align-items: center; scrollbar-width: none; }
+.execution-crumb { flex: 0 0 auto; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; font-size: 11px !important; }
+.execution-crumb:first-child { position: sticky; left: 0; z-index: 1; background: var(--vscode-editor-background); }
+.execution-crumb:not(:first-child)::before { content: '›'; margin-right: 8px; color: var(--secondary-text); }
+.execution-crumb[aria-current="true"] { color: var(--accent-color); background: color-mix(in srgb, var(--accent-color) 8%, transparent); }
+.execution-hint { color: var(--secondary-text); font-size: 10px; white-space: nowrap; }
+.execution-legend { display: flex; flex: 0 0 30px; align-items: center; gap: 4px; padding: 0 10px 4px; overflow-x: auto; scrollbar-width: thin; }
+.execution-type { flex: 0 0 auto; padding: 2px 6px; font-size: 11px !important; font-variant-numeric: tabular-nums; }
+:is(.execution-type, .execution-block)[data-kind="unit"] { --kind-color: var(--flow-unit); }
+:is(.execution-type, .execution-block)[data-kind="method"] { --kind-color: var(--flow-method); }
+:is(.execution-type, .execution-block)[data-kind="system"] { --kind-color: var(--flow-system); }
+:is(.execution-type, .execution-block)[data-kind="flow"] { --kind-color: var(--flow-flow); }
+:is(.execution-type, .execution-block)[data-kind="soql"] { --kind-color: var(--flow-soql); }
+:is(.execution-type, .execution-block)[data-kind="dml"] { --kind-color: var(--flow-dml); }
+.execution-type::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; background: var(--kind-color); }
+.execution-type[aria-pressed="true"] { border-color: color-mix(in srgb, var(--kind-color) 25%, transparent); background: color-mix(in srgb, var(--kind-color) 7%, transparent); }
+.execution-type[aria-pressed="false"] { opacity: 0.5; text-decoration: line-through; }
+.execution-chart { position: relative; display: flex; flex: 1; min-height: 35px; margin: 0 10px; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+.execution-lanes { position: relative; flex: 0 0 44px; border-right: 1px solid var(--border-color); overflow: hidden; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+.execution-lanes::after { content: ''; position: absolute; top: 0; height: 24px; left: 0; right: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-bottom: 1px solid var(--border-color); }
+.execution-lane-label { position: absolute; left: 0; width: 100%; height: 18px; text-align: center; font-size: 10px; line-height: 18px; color: var(--secondary-text); }
+.execution-lane-label.debug-lane { color: var(--vscode-charts-green, #388a34); }
+.execution-lane-label.issue-lane { color: var(--vscode-errorForeground, var(--error-color)); }
+.execution-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
+.execution-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.execution-scroll::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background); }
+.execution-timeline { position: relative; min-width: 100%; min-height: 100%; isolation: isolate; background: repeating-linear-gradient(to bottom, transparent 0, transparent 25px, var(--timeline-grid) 26px); background-position: 0 72px; }
+.execution-axis { position: sticky; z-index: 6; top: 0; height: 24px; background: var(--vscode-editor-background); color: var(--secondary-text); border-bottom: 1px solid var(--border-color); pointer-events: none; white-space: nowrap; font: 10px/23px var(--font-family); }
+.execution-tick { position: absolute; padding: 0 4px; border-left: 1px solid var(--border-color); }
+.execution-layer { position: absolute; inset: 0; pointer-events: none; }
+.execution-layer > * { pointer-events: auto; }
+.execution-panel .execution-block { position: absolute; height: 23px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--kind-color) 50%, transparent); border-left: 3px solid var(--kind-color); border-radius: 3px; background: color-mix(in srgb, var(--kind-color) 17%, var(--vscode-editor-background)); padding: 0; text-align: left; white-space: nowrap; text-overflow: ellipsis; font: 11px/21px var(--font-family); }
+.execution-panel .execution-block:hover { background: color-mix(in srgb, var(--kind-color) 30%, var(--vscode-editor-background)); z-index: 3; }
+.execution-panel .execution-block.is-selected { outline: 2px solid var(--vscode-focusBorder, var(--accent-color)); outline-offset: -2px; background: color-mix(in srgb, var(--kind-color) 35%, var(--vscode-editor-background)); z-index: 2; }
+.execution-panel .execution-block.is-incomplete { border-right-style: dashed; background-image: repeating-linear-gradient(135deg, transparent 0, transparent 5px, color-mix(in srgb, var(--kind-color) 14%, transparent) 5px, color-mix(in srgb, var(--kind-color) 14%, transparent) 7px); }
+.execution-panel .execution-marker { position: absolute; height: 17px; min-width: 12px; max-width: 26px; overflow: hidden; padding: 0 2px; border: 1px solid var(--debug-color); border-radius: 3px; font: 10px/14px var(--font-family); color: var(--text-color); background: color-mix(in srgb, var(--debug-color) 25%, var(--vscode-editor-background)); }
+.execution-panel .execution-marker:not([data-severity="debug"]) { border-color: var(--error-color); background: color-mix(in srgb, var(--error-color) 30%, var(--vscode-editor-background)); }
+.execution-panel .execution-marker[data-severity="exception"], .execution-panel .execution-marker[data-severity="fault"] { border-color: var(--vscode-editorWarning-foreground, #cca700); background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 20%, var(--vscode-editor-background)); }
+.execution-panel .execution-marker.is-selected { outline: 2px solid var(--vscode-focusBorder, var(--accent-color)); z-index: 3; }
+.execution-empty { position: absolute; inset: 25px 8px 8px 50px; display: grid; place-items: center; color: var(--secondary-text); text-align: center; font-size: 11px; pointer-events: none; }
+.execution-inspector { display: flex; align-items: center; gap: 5px; flex: 0 0 52px; min-width: 0; padding: 5px 10px; }
+.execution-selection { flex: 1; min-width: 0; }
+.execution-selection-title, .execution-selection-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.execution-selection-title { font-weight: 600; line-height: 20px; }
+.execution-selection-meta { color: var(--secondary-text); font-size: 10px; line-height: 15px; font-variant-numeric: tabular-nums; }
+.execution-panel .execution-text-control { font-size: 11px; border-color: var(--border-color); }
+.execution-panel #execution-focus:not(:disabled) { color: var(--accent-color); border-color: color-mix(in srgb, var(--accent-color) 40%, transparent); }
+.execution-resize { flex: 0 0 5px; cursor: ns-resize; touch-action: none; background: var(--vscode-sideBar-background, transparent); }
+.execution-resize:hover, .execution-resize:focus-visible { background: var(--vscode-focusBorder, var(--accent-color)); }
+button:focus-visible, .column-resize:focus-visible, #execution-scroll:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+[hidden] { display: none !important; }
 
-.execution-breadcrumb {
+#reveal-notice {
     display: flex;
     align-items: center;
-    gap: 2px;
-    min-width: 0;
-    max-width: 220px;
-    margin-right: 4px;
-    color: var(--secondary-text);
-    font-size: 0.88em;
-    white-space: nowrap;
+    flex-wrap: wrap;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.9em;
 }
-
-.execution-breadcrumb-current {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.execution-back {
-    flex: 0 0 20px;
-    width: 20px;
-    height: 22px;
-    padding: 0;
-    color: var(--secondary-text);
-    font-size: 15px;
-    line-height: 20px;
-}
-
-.execution-control {
-    flex: 0 0 24px;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    color: var(--secondary-text);
-    font-size: 15px;
-    line-height: 22px;
-    text-align: center;
-}
-
-.execution-control.execution-fit {
-    flex-basis: 34px;
-    width: 34px;
-    font-size: 0.82em;
-}
-
-.execution-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    padding: 0 10px 8px;
-}
-
-.execution-scroll {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
+#return-to-filters {
+    background: transparent;
+    color: var(--accent-color);
     border: 1px solid var(--border-color);
     border-radius: 3px;
-    background: var(--vscode-editor-background);
-    scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
-    scrollbar-width: thin;
-}
-
-.execution-scroll::-webkit-scrollbar {
-    height: 8px;
-}
-
-.execution-scroll::-webkit-scrollbar-thumb {
-    background: var(--vscode-scrollbarSlider-background);
-    border-radius: 4px;
-}
-
-.execution-scroll::-webkit-scrollbar-thumb:hover {
-    background: var(--vscode-scrollbarSlider-hoverBackground);
-}
-
-.execution-timeline {
-    position: relative;
-    width: max(100%, var(--execution-min-width));
-    min-width: var(--execution-min-width);
-    height: 100%;
-    min-height: var(--execution-track-height);
-    overflow: hidden;
-    isolation: isolate;
-    background-image: repeating-linear-gradient(
-        to right,
-        transparent 0,
-        transparent 79px,
-        var(--timeline-grid) 80px
-    );
-}
-
-.execution-axis {
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    right: 0;
-    left: 0;
-    height: var(--execution-axis-height);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--vscode-editor-background);
-    color: var(--secondary-text);
-    font-size: 0.78em;
-    line-height: calc(var(--execution-axis-height) - 1px);
-    pointer-events: none;
-    white-space: nowrap;
-}
-
-.execution-layer {
-    position: absolute;
-    z-index: 2;
-    top: var(--execution-axis-height);
-    right: 0;
-    bottom: 0;
-    left: 0;
-    pointer-events: none;
-}
-
-.execution-layer > * {
-    pointer-events: auto;
-}
-
-.execution-block {
-    position: absolute;
-    top: 8px;
-    min-width: 3px;
-    height: 22px;
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--accent-color) 72%, transparent);
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--accent-color) 22%, transparent);
-    color: var(--text-color);
-    cursor: pointer;
+    padding: 3px 6px;
     font: inherit;
-    font-size: 0.82em;
-    line-height: 20px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.execution-block:hover,
-.execution-block.is-selected,
-.execution-block[aria-current="true"] {
-    border-color: var(--vscode-focusBorder);
-    background: color-mix(in srgb, var(--accent-color) 36%, transparent);
-}
-
-.execution-block-label {
-    display: block;
-    overflow: hidden;
-    padding: 0 6px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.execution-block[data-kind="trigger"] {
-    border-color: color-mix(in srgb, #c586c0 70%, transparent);
-    background: color-mix(in srgb, #c586c0 22%, transparent);
-}
-
-.execution-block[data-kind="flow"] {
-    border-color: color-mix(in srgb, #4fc1ff 70%, transparent);
-    background: color-mix(in srgb, #4fc1ff 20%, transparent);
-}
-
-.execution-block[data-kind="soql"] {
-    border-color: color-mix(in srgb, #ce9178 70%, transparent);
-    background: color-mix(in srgb, #ce9178 20%, transparent);
-}
-
-.execution-block[data-kind="dml"] {
-    border-color: color-mix(in srgb, #dcdcaa 70%, transparent);
-    background: color-mix(in srgb, #dcdcaa 18%, transparent);
-}
-
-.execution-block[data-kind="system"] {
-    border-color: color-mix(in srgb, var(--secondary-text) 70%, transparent);
-    background: color-mix(in srgb, var(--secondary-text) 15%, transparent);
-}
-
-.execution-debug-marker,
-.execution-error-marker {
-    position: absolute;
-    top: 4px;
-    width: 7px;
-    height: 7px;
-    padding: 0;
-    border: 1px solid var(--vscode-editor-background);
     cursor: pointer;
 }
-
-.execution-debug-marker {
-    z-index: 4;
-    border-radius: 50%;
-    background: var(--debug-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--debug-color) 50%, transparent);
-}
-
-.execution-error-marker {
-    z-index: 5;
-    top: 3px;
-    width: 9px;
-    height: 9px;
-    border-radius: 1px;
-    background: var(--error-color);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--error-color) 55%, transparent);
-    transform: rotate(45deg);
-}
-
-.execution-debug-marker:hover,
-.execution-error-marker:hover {
-    outline: 1px solid var(--vscode-focusBorder);
-    outline-offset: 2px;
-}
-
-.execution-empty {
-    position: absolute;
-    z-index: 6;
-    top: 50%;
-    left: 50%;
-    padding: 0 10px;
-    color: var(--secondary-text);
-    font-size: 0.86em;
-    text-align: center;
-    transform: translate(-50%, -50%);
-    white-space: nowrap;
-}
-
-.execution-empty[hidden] {
-    display: none;
-}
-
-/* --- Table Container --- */
 #log-table-container {
+    --log-columns: 28px 132px 210px 102px 480px;
+    --log-table-width: 952px;
     position: relative;
     flex: 1 1 auto;
     min-height: 0;
@@ -467,172 +248,155 @@ body {
     display: flex;
     flex-direction: column;
 }
-
-/* --- Header --- */
 .table-header-sticky {
     flex: 0 0 var(--header-height);
     background: var(--vscode-editor-background);
     border-bottom: 1px solid var(--border-color);
     overflow: hidden;
+}
+#log-table-header-wrapper { overflow: hidden; }
+#log-table-header, .log-row {
+    display: grid;
+    grid-template-columns: var(--log-columns);
+    width: var(--log-table-width);
+}
+#log-table-header > div {
     position: relative;
-    z-index: 5;
-}
-
-#log-table-header-wrapper {
-    width: 100%;
-    overflow: hidden;
-}
-
-#log-table-header {
-    width: max-content;
-    min-width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-}
-
-#log-table-header th {
-    text-align: left;
-    font-weight: 600;
+    min-width: 0;
     padding: 0 8px;
     height: var(--header-height);
-    color: var(--secondary-text);
+    line-height: var(--header-height);
     border-right: 1px solid var(--border-color);
+    color: var(--secondary-text);
+    font-size: 0.9em;
+    font-weight: 600;
+    text-transform: uppercase;
     white-space: nowrap;
     user-select: none;
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
 }
-
-#log-table-header th:last-child {
-    border-right: none;
+.column-resize {
+    position: absolute;
+    right: -3px;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
 }
-
-/* --- Virtual Viewport --- */
+.column-resize:hover, .column-resize:focus-visible { background: var(--vscode-focusBorder); }
 #virtual-viewport {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: auto;
+    min-height: 0;
+    overflow: auto;
     position: relative;
     scrollbar-width: thin;
     scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
 }
-
-#virtual-viewport::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-#virtual-viewport::-webkit-scrollbar-thumb {
-    background: var(--vscode-scrollbarSlider-background);
-    border-radius: 5px;
-}
-
-#virtual-viewport::-webkit-scrollbar-thumb:hover {
-    background: var(--vscode-scrollbarSlider-hoverBackground);
-}
-
-#content-container {
-    position: relative;
-    width: max-content;
-    min-width: 100%;
-}
-
-/* --- Rows --- */
-.log-row {
-    position: absolute;
-    left: 0;
-    width: max-content;
-    min-width: 100%;
-    height: var(--row-height);
-    display: flex;
-    border-bottom: 1px solid transparent; /* Cleaner look */
-    background: transparent;
-    transition: background 0.1s;
-}
-
-.log-row:hover {
-    background: var(--hover-bg);
-}
-
+#virtual-viewport::-webkit-scrollbar { width: 10px; height: 10px; }
+#virtual-viewport::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background); border-radius: 5px; }
+#content-container { position: relative; width: var(--log-table-width); }
+.log-row { position: absolute; left: 0; height: var(--row-height); }
+.log-row:hover { background: var(--hover-bg); }
+.log-row.is-selected { background: var(--selection-bg); color: var(--vscode-list-activeSelectionForeground, var(--text-color)); }
 .log-cell {
+    min-width: 0;
     height: 100%;
     padding: 0 8px;
     line-height: var(--row-height);
-    border-right: 1px solid transparent;
+    border-right: 1px solid rgba(128, 128, 128, 0.1);
     white-space: pre;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: flex;
-    align-items: center;
 }
-
-/* Vertical grid lines on hover or always? Let's keep it clean, no vertical lines by default */
-.log-row .log-cell {
-    border-right: 1px solid rgba(128, 128, 128, 0.1);
-}
-
-/* --- Event Type Styling --- */
-.log-row.USER_DEBUG .log-cell:nth-child(3) { /* Event Type Column */
-    color: #4ec9b0; /* Teal for debug */
-    font-weight: bold;
-}
-
-.log-row.SOQL_EXECUTE .log-cell:nth-child(3) {
-    color: #ce9178; /* Orange/Brown for SOQL */
-}
-
-.log-row.EXCEPTION_THROWN .log-cell {
-    color: #f48771; /* Reddish for errors */
-}
-
-.log-row.METHOD_ENTRY, .log-row.METHOD_EXIT {
-    color: var(--secondary-text);
-    font-style: italic;
-}
-
-.log-row.entry {
-    background: rgba(128, 128, 128, 0.05);
-}
-
-/* --- Collapse Button --- */
+.collapse-cell { display: flex; align-items: center; justify-content: center; padding: 0; }
+.log-row.USER_DEBUG .log-cell:nth-child(3) { color: var(--debug-color); font-weight: bold; }
+.log-row.SOQL_EXECUTE_BEGIN .log-cell:nth-child(3), .log-row.SOQL_EXECUTE_END .log-cell:nth-child(3),
+.log-row.SOSL_EXECUTE_BEGIN .log-cell:nth-child(3), .log-row.SOSL_EXECUTE_END .log-cell:nth-child(3) { color: #ce9178; }
+.log-row.severity-fatal, .log-row.severity-error { color: var(--error-color); }
+.log-row.severity-exception { color: var(--vscode-editorWarning-foreground, #cca700); }
+.log-row.severity-fault { color: var(--vscode-descriptionForeground); }
+.log-row.METHOD_ENTRY, .log-row.METHOD_EXIT { color: var(--secondary-text); font-style: italic; }
+.log-row.entry { background: rgba(128, 128, 128, 0.05); }
+.log-row.entry.is-selected { background: var(--selection-bg); }
 .collapse-btn {
     background: none;
     border: none;
     color: var(--secondary-text);
     cursor: pointer;
     padding: 0;
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 22px;
+    height: 22px;
     border-radius: 3px;
-    transition: background 0.2s;
 }
-
-.collapse-btn:hover {
-    background: rgba(128, 128, 128, 0.2);
+.collapse-btn:hover { background: var(--hover-bg); color: var(--text-color); }
+.log-action {
+    flex: 0 0 auto;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: transparent;
     color: var(--text-color);
+    font: inherit;
+    font-size: 11px;
+    line-height: 20px;
+    padding: 0 7px;
+    cursor: pointer;
+    white-space: nowrap;
 }
-
-/* --- Indentation for Tree View --- */
-/* This needs to be handled by padding in JS or multiple cells? 
-   Currently JS puts everything in cells. 
-   The 'Details' column might need indentation if we want a tree view there, 
-   but the current impl seems to just list them. 
-   Wait, the JS logic does `type: 'entry'` etc. but doesn't seem to indent the text visually 
-   other than maybe `method-inner` class in original CSS?
-   Original CSS had `.method-inner { padding-left: 8px; }`.
-   I should preserve that.
-*/
-
-.method-inner .log-cell:last-child {
-    padding-left: 20px; /* Indent details for inner items */
-    border-left: 2px solid var(--border-color);
+.log-action:hover:not(:disabled) { background: var(--hover-bg); }
+.log-action:disabled { opacity: 0.45; cursor: default; }
+.variable-cell { display: flex; align-items: center; gap: 8px; }
+.variable-content { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+.variable-name { color: var(--vscode-debugTokenExpression-name, var(--text-color)); font-weight: 600; max-width: 35%; }
+.variable-type {
+    flex: 0 1 auto;
+    max-width: 160px;
+    color: var(--vscode-textLink-foreground, #3794ff);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 10px;
+    line-height: 17px;
 }
-
-/* Helper for method stack visualization if needed */
-.log-row[data-depth="1"] .log-cell:last-child { padding-left: 20px; }
-.log-row[data-depth="2"] .log-cell:last-child { padding-left: 40px; }
-/* ... dynamic padding would be better handled in JS style */
+.variable-operator { flex: 0 0 auto; color: var(--secondary-text); }
+.variable-previous { max-width: 25%; color: var(--secondary-text); }
+.variable-value { flex: 0 1 auto; min-width: 12px; }
+.variable-name, .variable-type, .variable-previous, .variable-value, .variable-unrecorded { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.variable-unrecorded, .value-null, .value-reference { color: var(--vscode-descriptionForeground, #999); }
+.value-number { color: var(--vscode-debugTokenExpression-number, #b5cea8); }
+.value-boolean { color: var(--vscode-debugTokenExpression-boolean, #569cd6); }
+.value-string { color: var(--vscode-debugTokenExpression-string, #ce9178); }
+.variable-partial { flex: 0 0 auto; font-size: 10px; color: var(--vscode-editorWarning-foreground, #cca700); }
+.variable-inspect { border-color: transparent; line-height: 19px; color: var(--accent-color); }
+.variable-inspect:hover, .variable-inspect:focus-visible { border-color: var(--border-color); }
+.log-row.VARIABLE_SCOPE_BEGIN .log-cell:nth-child(3), .log-row.VARIABLE_ASSIGNMENT .log-cell:nth-child(3) { color: var(--secondary-text); }
+#variable-dialog {
+    width: min(820px, calc(100vw - 32px));
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    padding: 18px;
+    border: 1px solid var(--vscode-widget-border, var(--border-color));
+    border-radius: 6px;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    color: var(--text-color);
+    box-shadow: 0 8px 30px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.4));
+}
+#variable-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.variable-dialog-header, .variable-dialog-footer { display: flex; align-items: center; gap: 12px; }
+.variable-dialog-header h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 15px; margin: 0; }
+#variable-dialog-meta, #variable-copy-status { color: var(--secondary-text); font-size: 11px; overflow-wrap: anywhere; }
+#variable-dialog-notice { color: var(--vscode-editorWarning-foreground, #cca700); font-size: 12px; }
+#variable-dialog h3 { color: var(--secondary-text); font-size: 11px; font-weight: normal; margin: 14px 0 6px; }
+#variable-dialog pre { font: inherit; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; padding: 10px; background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.07)); border: 1px solid var(--border-color); border-radius: 3px; }
+#variable-dialog, #variable-dialog pre { scrollbar-width: thin; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
+.variable-raw { margin: 16px 0; }
+.variable-raw summary { color: var(--accent-color); cursor: pointer; font-size: 12px; }
+#log-status { position: absolute; top: 44px; left: 12px; right: 12px; color: var(--secondary-text); pointer-events: none; }
+@media (max-width: 600px) {
+    .search-container { max-width: none; }
+    .execution-header { flex-wrap: wrap; gap: 4px 10px; }
+    .execution-summary { flex: 1; }
+    .execution-actions { margin-left: 0; width: 100%; justify-content: flex-end; }
+    .execution-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

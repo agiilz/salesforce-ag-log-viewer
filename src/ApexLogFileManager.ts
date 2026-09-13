@@ -39,7 +39,8 @@ export class ApexLogFileManager {
     }
 
     //Metodo para abrir el log en el editor
-    public async showLog(log: ApexLog): Promise<void> {
+    public async showLog(log: ApexLog, isCurrent: () => boolean = () => true): Promise<void> {
+        if (!isCurrent()) return;
         const logPath = this.getLogPath(log);
         let fileExists = false;
         let errorInfo: { hasError: boolean, message?: string } | undefined = undefined;
@@ -48,31 +49,35 @@ export class ApexLogFileManager {
             try {
                 fileExists = await fs.pathExists(logPath);
             } catch (fsErr) {
+                if (!isCurrent()) return;
                 outputChannel.appendLine(`File system error: ${fsErr}`);
                 const errorMessage = fsErr instanceof Error ? fsErr.message : String(fsErr);
                 errorInfo = { hasError: true, message: 'File system error: ' + errorMessage };
                 if (this.activeProvider?.updateView) {
                     this.activeProvider.updateView([], false, errorInfo);
                 }
-                return;
+                throw fsErr;
             }
+            if (!isCurrent()) return;
             if (fileExists) {
                 //Si el fichero existe localmente, se abre en el editor
                 try {
                     outputChannel.appendLine(`Opening cached log: ${logPath}`);
                     const document = await vscode.workspace.openTextDocument(logPath);
                     await vscode.languages.setTextDocumentLanguage(document, 'log');
+                    if (!isCurrent()) return;
                     await vscode.window.showTextDocument(document, { preview: false });
-                    this.notifyLogDownloaded(log.id);
+                    if (isCurrent()) this.notifyLogDownloaded(log.id);
                     return;
                 } catch (openErr) {
+                    if (!isCurrent()) return;
                     outputChannel.appendLine(`Error opening cached log: ${openErr}`);
                     const errorMessage = openErr instanceof Error ? openErr.message : String(openErr);
                     errorInfo = { hasError: true, message: 'Error opening cached log: ' + errorMessage };
                     if (this.activeProvider?.updateView) {
                         this.activeProvider.updateView([], false, errorInfo);
                     }
-                    return;
+                    throw openErr;
                 }
             }
 
@@ -81,8 +86,10 @@ export class ApexLogFileManager {
             for (const editor of vscode.window.visibleTextEditors) {
                 if (editor.document.uri.fsPath === logPath) {
                     await vscode.window.showTextDocument(editor.document, { preview: false });
+                    if (!isCurrent()) return;
                     await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
                     await new Promise(res => setTimeout(res, 300));
+                    if (!isCurrent()) return;
                 }
             }
         }
@@ -91,23 +98,27 @@ export class ApexLogFileManager {
         try {
             outputChannel.appendLine(`Downloading new log: ${log.operation} (${(log.size / 1024).toFixed(1)} KB)`);
             const logBody = await log.getBody();
+            if (!isCurrent()) return;
             const fileName = this.getLogFileName(log);
             outputChannel.appendLine('Processing and saving log...');
-            await this.openLog(logBody, fileName);
+            await this.openLog(logBody, fileName, isCurrent);
+            if (!isCurrent()) return;
 
             //Refresco del explorador de archivos del VsCode para que aparezca el nuevo log
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
             outputChannel.appendLine('Log downloaded and opened successfully');
 
             //Enviar notificacion al WebView de que el log ha sido descargado
-            this.notifyLogDownloaded(log.id);
+            if (isCurrent()) this.notifyLogDownloaded(log.id);
         } catch (error) {
+            if (!isCurrent()) return;
             outputChannel.appendLine(`Error downloading log: ${error instanceof Error ? error.message : String(error)}`);
             const errorMessage = error instanceof Error ? error.message : String(error);
             errorInfo = { hasError: true, message: 'Error downloading log: ' + errorMessage };
             if (this.activeProvider?.updateView) {
                 this.activeProvider.updateView([], false, errorInfo);
             }
+            throw error;
         }
     }
 
@@ -122,14 +133,16 @@ export class ApexLogFileManager {
     }
 
     //Para abrir el registro de Log en el editor
-    private async openLog(logBody: string, logFileName: string): Promise<void> {
+    private async openLog(logBody: string, logFileName: string, isCurrent: () => boolean): Promise<void> {
         //log.replace(/(^[0-9:.() ]+\|ENTERING_MANAGED_PKG\|.*\n)+/gm, '$1');
         let document: vscode.TextDocument;
         if (this.logsPath) {
             //Si existe la ruta de logs, se crea alli el archivo log y se abre en el editor
             const fullLogPath = path.join(this.logsPath, logFileName);
             await fs.ensureDir(this.logsPath);
+            if (!isCurrent()) return;
             await fs.writeFile(fullLogPath, logBody);
+            if (!isCurrent()) return;
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
             document = await vscode.workspace.openTextDocument(fullLogPath);
         } else {
@@ -137,6 +150,7 @@ export class ApexLogFileManager {
             document = await vscode.workspace.openTextDocument({ content: logBody });
         }
         await vscode.languages.setTextDocumentLanguage(document, 'log');
+        if (!isCurrent()) return;
         await vscode.window.showTextDocument(document, { preview: false });
     }
 

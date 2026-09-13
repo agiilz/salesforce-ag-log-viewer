@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { getLogDataProvider } from './extension';
 import { enableTraceFlagForUser, disableTraceFlagForUser } from './TraceFlagManager';
-import { retryOnSessionExpire } from './connection';
 
 //Metodo para cambiar la visibilidad de los logs que se muestran en el panel
 export async function setLogVisibility() {
@@ -45,42 +44,55 @@ export async function setLogVisibility() {
 
 //Metodo para borrar todos los logs de Apex de la org de Salesforce
 export async function deleteAllLogs() {
-    const confirmation = await vscode.window.showWarningMessage(
-        'Are you sure you want to delete ALL Apex logs from your Salesforce org? This action cannot be undone.',
-        { modal: true },
-        'Delete All Logs'
-    );
+    try {
+        const provider = await getLogDataProvider();
+        // Keep confirmation, pagination and deletion tied to the same connection.
+        // Its jsforce refreshFn can renew authentication without switching orgs.
+        const connection = provider.connection;
+        const assertCurrent = () => {
+            if (provider.connection !== connection) {
+                throw new Error('The Salesforce connection changed. Run Delete All Logs again for the current org.');
+            }
+        };
+        const confirmation = await vscode.window.showWarningMessage(
+            'Are you sure you want to delete ALL Apex logs from your Salesforce org? This action cannot be undone.',
+            { modal: true },
+            'Delete All Logs'
+        );
 
-    if (confirmation !== 'Delete All Logs') {
-        vscode.window.showInformationMessage('Delete logs operation cancelled.');
-        return;
-    }
+        if (confirmation !== 'Delete All Logs') {
+            vscode.window.showInformationMessage('Delete logs operation cancelled.');
+            return;
+        }
+        assertCurrent();
 
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: "Deleting Salesforce logs...",
-        cancellable: false
-    }, async (progress) => {
-        try {
-            const provider = await getLogDataProvider();
-
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Deleting Salesforce logs...",
+            cancellable: false
+        }, async (progress) => {
+            assertCurrent();
             progress.report({ message: "Querying log IDs..." });
-            const result = await retryOnSessionExpire(
-                async (conn) => await conn.tooling.query('SELECT Id FROM ApexLog LIMIT 10000'),
-                provider
-            ) as { records: { Id: string }[] };
+            let result = await connection.tooling.query<{ Id: string }>('SELECT Id FROM ApexLog');
+            assertCurrent();
+            const logIds = result.records.map(record => record.Id);
+            while (!result.done && result.nextRecordsUrl) {
+                result = await connection.tooling.queryMore<{ Id: string }>(result.nextRecordsUrl);
+                assertCurrent();
+                logIds.push(...result.records.map(record => record.Id));
+            }
 
-            if (!result.records || result.records.length === 0) {
+            if (logIds.length === 0) {
                 vscode.window.showInformationMessage('No logs found to delete.');
                 provider.notifyDataChange();
                 return;
             }
 
-            const logIds = result.records.map(record => record.Id);
             const chunkSize = 200;
             let deletedCount = 0;
 
             for (let i = 0; i < logIds.length; i += chunkSize) {
+                assertCurrent();
                 const chunk = logIds.slice(i, i + chunkSize);
                 progress.report({
                     message: `Deleting logs ${i + 1}-${Math.min(i + chunkSize, logIds.length)} of ${logIds.length}...`
@@ -88,7 +100,7 @@ export async function deleteAllLogs() {
 
                 try {
                     await Promise.all(chunk.map(id =>
-                        provider.connection.request({
+                        connection.request({
                             method: 'DELETE',
                             url: `/services/data/v58.0/sobjects/ApexLog/${id}`
                         }).then(() => {
@@ -104,15 +116,15 @@ export async function deleteAllLogs() {
                 }
             }
 
+            assertCurrent();
             vscode.window.showInformationMessage(`Successfully deleted ${deletedCount} logs.`);
             await provider.refreshLogs();
             provider.notifyDataChange();
-
-        } catch (error: any) {
-            const errorMessage = error?.message || 'Unknown error occurred';
-            vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
-        }
-    });
+        });
+    } catch (error: any) {
+        const errorMessage = error?.message || 'Unknown error occurred';
+        vscode.window.showErrorMessage(`Failed to delete logs: ${errorMessage}`);
+    }
 }
 
 
@@ -217,18 +229,18 @@ export async function showOptions() {
 //Set trace flag expiration interval in minutes + validation input
 async function setTraceFlagExpirationInterval(config: vscode.WorkspaceConfiguration, current: number) {
     const interval = await vscode.window.showInputBox({
-        prompt: "Enter trace flag expiration interval in minutes (minimum 5)",
+        prompt: "Enter trace flag expiration interval in minutes (5–1439)",
         value: current.toString(),
         validateInput: (value) => {
-            const num = parseInt(value);
-            if (isNaN(num) || num < 5) {
-                return "Please enter a valid number greater than or equal to 5";
+            const num = Number(value);
+            if (!Number.isInteger(num) || num < 5 || num > 1439) {
+                return "Please enter a whole number from 5 to 1439";
             }
             return null;
         }
     });
     if (interval) {
-        await config.update('traceFlagExpirationInterval', parseInt(interval), vscode.ConfigurationTarget.Global);
+        await config.update('traceFlagExpirationInterval', Number(interval), vscode.ConfigurationTarget.Global);
         vscode.window.showInformationMessage(`Trace flag expiration interval set to ${interval} minutes`);
     }
 }

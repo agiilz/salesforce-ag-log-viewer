@@ -2,6 +2,31 @@
 
 All notable changes to the "Salesforce AG Log Viewer" extension will be documented in this file.
 
+## [1.2.8]
+### Added
+- Show readable variable declarations and assignments with type badges, typed values, and previous recorded values within the same invocation.
+- Inspect recorded objects, lists and strings, view or copy the original event, and identify explicitly truncated values without losing numeric precision.
+- Collapse or expand all methods in Log Details while preserving search results, timeline navigation and saved folds.
+- Redesign Execution Flow with nested call rows, operation type toggles, separate debug/issue lanes, and a timing inspector with source navigation.
+- Add explicit scope focus and breadcrumbs, previous/next issue navigation, anchored zoom up to 16×, keyboard navigation, and adjustable panel height with persisted state.
+- Create debug levels with configurable category verbosity and select existing levels from the toolbar button next to Set TraceFlag for User or the Command Palette.
+- Remember the selected level per org and workspace, apply it to active trace flags managed by the extension, and use it for future trace flags.
+
+### Fixed
+- Keep log downloads and expired-session retries tied to the original Salesforce org.
+- Renew trace flags within the 24-hour limit, recreate deleted flags, and report permanent renewal failures.
+- Apply changes to log visibility, auto-refresh, and trace-flag expiration settings immediately.
+- Align the documented VS Code requirement with version 1.100.0.
+- Keep focused execution counters within source-line boundaries, preserve access to dense markers, and label missing end events and unavailable timings accurately.
+- Calculate elapsed self time without double-counting overlapping children and render only visible timeline rows and time ranges.
+- Preserve raw log text, multiline debug output, subsecond timestamps, and original source positions in Log Details.
+- Keep search results correct inside folded methods and preserve filters when navigating from the execution timeline.
+- Parse large logs in a worker with a chunked fallback, cache filtered rows, and group dense timeline markers.
+- Align table headers and rows, add resizable columns, and fit the timeline to narrow or resized panels.
+- Identify Flow errors, exceptions, fault paths, and fatal errors separately.
+- Restore filters, folds, selection, columns, scroll positions, and timeline state when the webview is recreated.
+- Send log content after the webview is ready and include regression tests for Log Details.
+
 ## [1.2.7]
 ### Fixed
 - Switching orgs immediately clears old logs and retrieves the new org's logs without waiting for previous requests to finish.

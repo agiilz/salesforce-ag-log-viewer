@@ -3,23 +3,13 @@
     It ensures that a debug level exists in the org and creates a trace flag for the user if it doesn't exist.
 
     TODO:
-    - Add support for creation of custom debug levels with the parameters specified by the user
     - Add support for trace flags for other entities (e.g. Apex classes, triggers)
 */
 
 import { Connection } from 'jsforce';
 import * as vscode from 'vscode';
 import { outputChannel } from './extension';
-
-export interface DebugLevel {
-    Id: string;
-    DeveloperName: string;
-    MasterLabel: string;
-    ApexCode: string;
-    Visualforce: string;
-    Database: string;
-    System: string;
-}
+import { ensureDebugLevel } from './DebugLevelManager';
 
 export interface TraceFlag {
     Id: string;
@@ -30,14 +20,16 @@ export interface TraceFlag {
     TracedEntityId: string;
 }
 
-//Define the debug level name/log type the same as the one used by the Developer Console
-const LEVEL_NAME = 'SFDC_DevConsole';
+// Use the same log type as the Developer Console.
 const LOG_TYPE = 'DEVELOPER_LOG';
 
 interface TraceFlagSession {
     connection: Connection;
+    expirationMinutes: number;
     timer?: NodeJS.Timeout;
     pending?: Promise<void>;
+    traceFlagId?: string;
+    renewalFailed?: boolean;
 }
 
 // Removing a session also invalidates work already awaiting a Salesforce response.
@@ -45,11 +37,22 @@ const traceFlagSessions = new Map<string, TraceFlagSession>();
 
 // Start the keep-alive loop for the trace flag
 export async function startTraceFlagKeepAlive(connection: Connection, userId: string) {
-    // Get expiration interval from config, default 15, min 5
-    const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-    let minutes = config.get<number>('traceFlagExpirationInterval') ?? 15;
-    if (minutes < 5) minutes = 5;
-    await ensureTraceFlag(connection, userId, minutes); // Pass interval
+    await ensureTraceFlag(connection, userId);
+}
+
+function expirationInterval(minutes = vscode.workspace.getConfiguration('salesforceAgLogViewer').get<number>('traceFlagExpirationInterval') ?? 15): number {
+    // Salesforce requires ExpirationDate to be strictly less than 24 hours after StartDate.
+    return Number.isFinite(minutes) ? Math.min(1439, Math.max(5, Math.floor(minutes))) : 15;
+}
+
+export function updateTraceFlagExpirationInterval(): void {
+    const minutes = expirationInterval();
+    for (const [userId, session] of traceFlagSessions) {
+        if (session.expirationMinutes === minutes) continue;
+        session.expirationMinutes = minutes;
+        // In-flight work will notice the new interval before scheduling its next renewal.
+        if (!session.pending) scheduleTraceFlagExtension(session, userId, 0);
+    }
 }
 
 // Stop the keep-alive loop for all users or a specific user
@@ -69,11 +72,16 @@ export async function ensureTraceFlag(connection: Connection, userId: string, ex
         return existing.pending;
     }
     stopTraceFlagKeepAlive(userId);
-    const session: TraceFlagSession = { connection };
+    const session: TraceFlagSession = { connection, expirationMinutes: expirationInterval(expirationMinutes) };
     traceFlagSessions.set(userId, session);
-    session.pending = configureTraceFlag(session, userId, expirationMinutes, keepAlive);
+    session.pending = configureTraceFlag(session, userId, keepAlive);
     try {
         await session.pending;
+    } catch (error) {
+        if (traceFlagSessions.get(userId) !== session) return;
+        outputChannel.appendLine(`Trace flag error for user ${userId}: ${error}`);
+        vscode.window.showErrorMessage(`Failed to manage trace flag for user ${userId}: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
     } finally {
         session.pending = undefined;
         if (!session.timer && traceFlagSessions.get(userId) === session) {
@@ -82,71 +90,96 @@ export async function ensureTraceFlag(connection: Connection, userId: string, ex
     }
 }
 
-async function configureTraceFlag(session: TraceFlagSession, userId: string, expirationMinutes: number | undefined, keepAlive: boolean): Promise<void> {
+async function configureTraceFlag(session: TraceFlagSession, userId: string, keepAlive: boolean): Promise<void> {
     const connection = session.connection;
     const isCurrent = () => traceFlagSessions.get(userId) === session;
-    try {
-        outputChannel.appendLine(`Checking trace flag for user: ${userId} on ${connection.instanceUrl}`);
-        //Set the debug level for the trace flag
-        const debugLevelId = await ensureDebugLevel(connection, isCurrent);
-        if (!isCurrent() || !debugLevelId) return;
-        // Check for existing trace flag
-        // This connection already owns its jsforce refreshFn. Resolving the global
-        // target here can send this user's IDs to a different org during a switch.
-        const existingFlags = await connection.tooling.query(`SELECT Id, DebugLevelId, LogType, StartDate, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = '${LOG_TYPE}'`) as { records: TraceFlag[] };
-        if (!isCurrent()) return;
-        outputChannel.appendLine(`Existing flags found: ${existingFlags.records?.length || 0}`);
-        //Delete existing trace flags from the user
-        if (existingFlags.records && existingFlags.records.length > 0) {
-            for (const flag of existingFlags.records) {
-                outputChannel.appendLine(`Deleting current trace flag: ${flag.Id}`);
-                await connection.tooling.delete('TraceFlag', flag.Id);
-                if (!isCurrent()) return;
-            }
+    outputChannel.appendLine(`Checking trace flag for user: ${userId} on ${connection.instanceUrl}`);
+    const debugLevelId = await ensureDebugLevel(connection, isCurrent);
+    if (!isCurrent() || !debugLevelId) return;
+    // Keep this user's IDs on the connection that created the session.
+    const existingFlags = await connection.tooling.query(`SELECT Id, DebugLevelId, LogType, StartDate, ExpirationDate FROM TraceFlag WHERE TracedEntityId = '${userId}' AND LogType = '${LOG_TYPE}'`) as { records: TraceFlag[] };
+    if (!isCurrent()) return;
+    outputChannel.appendLine(`Existing flags found: ${existingFlags.records?.length || 0}`);
+    if (existingFlags.records && existingFlags.records.length > 0) {
+        for (const flag of existingFlags.records) {
+            outputChannel.appendLine(`Deleting current trace flag: ${flag.Id}`);
+            await connection.tooling.delete('TraceFlag', flag.Id);
+            if (!isCurrent()) return;
         }
-        // Use config or default for expiration interval
-        let minutes = expirationMinutes;
-        if (!minutes) {
-            const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-            minutes = config.get<number>('traceFlagExpirationInterval') ?? 15;
-        }
-
-        //Create new trace flag with custom expiration
-        const traceFlagId = await createTraceFlag(connection, userId, debugLevelId, minutes);
-        if (!isCurrent()) return;
-        outputChannel.appendLine(`Successfully created and activated trace flag: ${traceFlagId}`);
-        if (keepAlive) {
-            scheduleTraceFlagExtension(session, userId, traceFlagId, minutes);
-        }
-    } catch (error: any) {
-        if (!isCurrent()) return;
-        const errorMessage = error?.message || 'Unknown error occurred';
-        outputChannel.appendLine(`Trace flag error for user ${userId} on ${connection.instanceUrl}: ${error}`);
-        vscode.window.showErrorMessage(`Failed to manage trace flag for user ${userId}: ${errorMessage}`);
-        throw error;
+    }
+    const minutes = session.expirationMinutes;
+    const traceFlagId = await createTraceFlag(connection, userId, debugLevelId, minutes);
+    if (!isCurrent()) return;
+    session.traceFlagId = traceFlagId;
+    outputChannel.appendLine(`Successfully created and activated trace flag: ${traceFlagId}`);
+    if (keepAlive) {
+        scheduleTraceFlagExtension(session, userId, minutes === session.expirationMinutes ? undefined : 0);
     }
 }
 
 // Schedule the timer to extend the trace flag expiration for a user
-function scheduleTraceFlagExtension(session: TraceFlagSession, userId: string, traceFlagId: string, minutes: number) {
+function scheduleTraceFlagExtension(session: TraceFlagSession, userId: string, delayMs = Math.max(session.expirationMinutes - 1, 1) * 60 * 1000) {
     if (traceFlagSessions.get(userId) !== session) return;
     if (session.timer) clearTimeout(session.timer);
-    // Set timer to fire at (minutes - 1) minutes
-    const interval = Math.max(minutes - 1, 1) * 60 * 1000;
     session.timer = setTimeout(async () => {
         if (traceFlagSessions.get(userId) !== session) return;
         session.timer = undefined;
+        session.pending = renewTraceFlag(session, userId);
         try {
-            await extendTraceFlagExpiration(session.connection, traceFlagId, minutes);
-            if (traceFlagSessions.get(userId) !== session) return;
-            outputChannel.appendLine(`Trace flag extended successfully: ${traceFlagId} for user: ${userId} in: ${minutes} minutes`);
-            scheduleTraceFlagExtension(session, userId, traceFlagId, minutes);
-        } catch (err) {
-            if (traceFlagSessions.get(userId) !== session) return;
-            traceFlagSessions.delete(userId);
-            outputChannel.appendLine(`Failed to extend trace flag for user ${userId}: ${err}`);
+            await session.pending;
+        } finally {
+            session.pending = undefined;
         }
-    }, interval);
+    }, delayMs);
+}
+
+async function renewTraceFlag(session: TraceFlagSession, userId: string): Promise<void> {
+    const minutes = session.expirationMinutes;
+    try {
+        if (session.traceFlagId) {
+            try {
+                await extendTraceFlagExpiration(session.connection, session.traceFlagId, minutes);
+            } catch (error) {
+                if (!hasErrorCode(error, ['NOT_FOUND', 'ENTITY_IS_DELETED'])) throw error;
+                session.traceFlagId = undefined;
+            }
+        }
+        if (traceFlagSessions.get(userId) !== session) return;
+        if (!session.traceFlagId) {
+            // A flag deleted outside the extension needs to be recreated.
+            await configureTraceFlag(session, userId, true);
+        } else {
+            scheduleTraceFlagExtension(session, userId, minutes === session.expirationMinutes ? undefined : 0);
+        }
+        session.renewalFailed = false;
+    } catch (error) {
+        if (traceFlagSessions.get(userId) !== session) return;
+        outputChannel.appendLine(`Failed to renew trace flag for user ${userId}: ${error}`);
+        if (!isTransientError(error)) {
+            stopTraceFlagKeepAlive(userId);
+            vscode.window.showErrorMessage(`Trace flag renewal stopped for user ${userId}: ${error instanceof Error ? error.message : String(error)}. Fix the error and enable the trace flag again.`);
+            return;
+        }
+        if (!session.renewalFailed) {
+            session.renewalFailed = true;
+            vscode.window.showWarningMessage(`Could not renew the trace flag for user ${userId}. Retrying every 30 seconds; log capture may pause until the connection recovers.`);
+        }
+        scheduleTraceFlagExtension(session, userId, 30_000);
+    }
+}
+
+function hasErrorCode(error: any, codes: string[]): boolean {
+    return [error, ...(Array.isArray(error?.errors) ? error.errors : [])].some(item =>
+        [item, item?.errorCode, item?.statusCode, item?.code, item?.name].some(code => codes.includes(code)));
+}
+
+function isTransientError(error: any): boolean {
+    const status = error?.statusCode ?? error?.status;
+    // jsforce uses ERROR_HTTP_<status> when a proxy returns a non-JSON error.
+    return status === 408 || status === 429 || status >= 500 || /^ERROR_HTTP_(408|429|5\d\d)$/.test(error?.errorCode) || hasErrorCode(error, [
+        'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE',
+        'INVALID_SESSION_ID', 'REQUEST_LIMIT_EXCEEDED', 'SERVER_UNAVAILABLE', 'UNKNOWN_EXCEPTION', 'UNABLE_TO_LOCK_ROW'
+    ]);
 }
 
 // Extend the expiration of the trace flag by N minutes from now
@@ -155,10 +188,11 @@ async function extendTraceFlagExpiration(connection: Connection, traceFlagId: st
     const newExpiration = new Date(now.getTime() + minutes * 60 * 1000);
     const result = await connection.tooling.update('TraceFlag', {
         Id: traceFlagId,
+        StartDate: now.toISOString(),
         ExpirationDate: newExpiration.toISOString()
     }) as { success: boolean; errors?: any };
     if (!result.success) {
-        throw new Error(`Failed to update trace flag expiration: ${JSON.stringify(result.errors)}`);
+        throw Object.assign(new Error(`Failed to update trace flag expiration: ${JSON.stringify(result.errors)}`), { errors: result.errors });
     }
     outputChannel.appendLine(`Extended trace flag expiration to: ${newExpiration.toISOString()}`);
 }
@@ -175,62 +209,48 @@ async function createTraceFlag(connection: Connection, userId: string, debugLeve
         LogType: LOG_TYPE,
         StartDate: now.toISOString(),
         ExpirationDate: future.toISOString()
-    }) as { id: string };
+    });
 
     // The result of tooling.create is { id: string } on success, but may have errors if failed
-    if (!('id' in result)) {
-        throw new Error(`Failed to create new trace flag: ${JSON.stringify(result)}`);
+    if (!result.success || !result.id) {
+        throw Object.assign(new Error(`Failed to create new trace flag: ${JSON.stringify(result)}`), { errors: result.errors });
     }
     outputChannel.appendLine(`Created new trace flag with ID: ${result.id}`);
     return result.id;
 }
 
-//Function to ensure the debug level exists in the org
-async function ensureDebugLevel(connection: Connection, isCurrent: () => boolean): Promise<string | undefined> {
-    try {
-        outputChannel.appendLine(`Checking for debug level: ${LEVEL_NAME}`);
-        
-        // Check for existing debug level in the org
-        const existingLevels = await connection.tooling.query(`SELECT Id, ApexCode, Visualforce, Database, System FROM DebugLevel WHERE DeveloperName = '${LEVEL_NAME}'`) as { records: DebugLevel[] };
+// Apply a selection to this connection's managed flags without replacing them or
+// interrupting their expiration timers. New sessions read the saved selection.
+export async function applyDebugLevelToTraceFlags(connection: Connection, currentUserId: string, debugLevelId: string, isCurrent: () => boolean): Promise<void> {
+    const sessions = [...traceFlagSessions].filter(([, session]) => session.connection === connection);
+    const failures: string[] = [];
+    for (const [userId, session] of sessions) {
+        // A flag being created when the selection changed can still use the old
+        // level. Wait for it before applying the new one.
+        await session.pending?.catch(() => undefined);
         if (!isCurrent()) return;
-
-        if (existingLevels.records && existingLevels.records.length > 0) {
-            outputChannel.appendLine(`Found existing debug level: ${existingLevels.records[0].Id}`);
-            return existingLevels.records[0].Id;
-        }else{
-            // Create new debug level if there are none
-            outputChannel.appendLine('No existing debug level found, creating a new one...');
-            return await createDebugLevel(connection);
+        if (traceFlagSessions.get(userId) !== session || !session.traceFlagId) continue;
+        try {
+            const result = await connection.tooling.update('TraceFlag', {
+                Id: session.traceFlagId,
+                DebugLevelId: debugLevelId
+            });
+            if (!result.success) throw new Error(JSON.stringify(result.errors));
+        } catch (error) {
+            failures.push(`${userId}: ${error instanceof Error ? error.message : String(error)}`);
         }
-            
-    } catch (error: any) {
-        if (!isCurrent()) return;
-        outputChannel.appendLine(`Debug level error: ${error}`);
-        throw error;
     }
-}
-
-//Function to create a new debug level in the org
-async function createDebugLevel(connection: Connection): Promise<string> {
-
-    const result = await connection.tooling.create('DebugLevel', {
-        DeveloperName: LEVEL_NAME,
-        MasterLabel: LEVEL_NAME,
-        ApexCode: 'FINEST',
-        Visualforce: 'FINER',
-        Database: 'INFO',
-        System: 'DEBUG',
-        Callout: 'INFO',
-        Workflow: 'INFO',
-        Validation: 'INFO'
-    }) as { id: string };
-    
-    // The result of tooling.create is { id: string } on success, but may have errors if failed
-    if (!('id' in result)) {
-        throw new Error(`Failed to create debug level: ${JSON.stringify(result)}`);
+    if (!isCurrent()) return;
+    // Also recover current-user capture if startup failed (for example, because
+    // the previously selected debug level was deleted).
+    if (traceFlagSessions.get(currentUserId)?.connection !== connection) {
+        try {
+            await ensureTraceFlag(connection, currentUserId);
+        } catch (error) {
+            failures.push(`${currentUserId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
-    outputChannel.appendLine(`Created new debug level with ID: ${result.id}`);
-    return result.id;
+    if (failures.length) throw new Error(`Could not update trace flags for ${failures.join('; ')}. Select the level again to retry.`);
 }
 
 // Enable trace flag for a specific user, with keep-alive

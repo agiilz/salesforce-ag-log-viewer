@@ -7,6 +7,8 @@ import { setLogVisibility, deleteAllLogs, toggleAutoRefresh, showOptions, showSe
 import { ApexLogPanelProvider } from './ApexLogPanel/ApexLogPanelProvider';
 import { stopTraceFlagKeepAlive } from './TraceFlagManager';
 import { ApexLogDetails } from './ApexLogDetails/ApexLogDetails';
+import { initializeDebugLevels } from './DebugLevelManager';
+import { selectDebugLevel, createDebugLevel } from './DebugLevelCommands';
 
 let logDataProvider: LogDataProvider | undefined;
 let extensionContext: vscode.ExtensionContext;
@@ -20,6 +22,7 @@ export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Lo
 
 export async function activate(context: vscode.ExtensionContext) {
     extensionContext = context;
+    initializeDebugLevels(context.workspaceState);
     const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
     const showOutputOnStart = config.get<boolean>('showOutputOnStart') ?? true;
     context.subscriptions.push(outputChannel);
@@ -225,6 +228,8 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
         ['salesforce-ag-log-viewer.clearSearch', clearSearch],
         ['salesforce-ag-log-viewer.clearDownloadedLogs', clearDownloadedLogs],
         ['salesforce-ag-log-viewer.setTraceFlagForUser', setTraceFlagForUser],
+        ['salesforce-ag-log-viewer.selectDebugLevel', selectDebugLevel],
+        ['salesforce-ag-log-viewer.createDebugLevel', createDebugLevel],
         ['salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent', deleteAllTraceFlagsExceptCurrent]
     ];
 
@@ -257,13 +262,20 @@ export async function getLogDataProvider(): Promise<LogDataProvider> {
 
 //Metodo que abre un log especifico por su ID una vez el usuario ha dado click en el log
 export async function openLog(data: { id: string }) {
+    let isCurrent = () => true;
     try {
         const provider = await getLogDataProvider();
+        let connection = provider.connection;
+        isCurrent = () => provider.connection === connection;
         // Use retryOnSessionExpire to handle session expiration
         const result = await retryOnSessionExpire(
-            (conn) => conn.tooling.retrieve('ApexLog', data.id) as Promise<any>,
+            (conn) => {
+                connection = conn;
+                return conn.tooling.retrieve('ApexLog', data.id) as Promise<any>;
+            },
             provider
         );
+        if (!isCurrent()) return;
         if (!result) {
             throw new Error(`Log with ID ${data.id} not found`);
         }
@@ -280,13 +292,14 @@ export async function openLog(data: { id: string }) {
             Application: result.Application ?? '',
             Location: result.Location ?? '',
             Request: result.Request ?? ''
-        }, provider.connection);
+        }, connection);
 
-        await provider.logFileManager.showLog(log);
+        await provider.logFileManager.showLog(log, isCurrent);
 
         // Mark the log as opened (set status to 'downloaded' and refresh UI)
-        logDataProvider?.markLogAsOpened(log.id);
+        if (isCurrent()) provider.markLogAsOpened(log.id);
     } catch (error) {
+        if (!isCurrent()) return;
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Failed to open log: ${errorMessage}`);
         activeProvider?.postMessage({ type: 'logOpenFailed', logId: data.id });

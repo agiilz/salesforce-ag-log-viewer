@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src ${cspSource}; connect-src ${cspSource}; worker-src blob:;">
     <title>Log Details</title>
     <link rel="stylesheet" type="text/css" href="${styleUri}">
 </head>
@@ -18,10 +20,11 @@
                 <span class="checkmark"></span>
                 Debug only
             </label>
+            <button id="collapse-all-methods" class="log-action" type="button" disabled>Collapse all methods</button>
         </div>
         <div class="search-container">
             <span class="search-icon">🔍</span>
-            <input id="log-search-input" type="text" placeholder="Search logs..." class="vscode-input">
+            <input id="log-search-input" type="text" placeholder="Search logs..." aria-label="Search log events" class="vscode-input">
         </div>
     </div>
 
@@ -40,54 +43,86 @@
             </button>
             <span id="execution-summary" class="execution-summary" aria-live="polite">Open a log to view its flow</span>
             <div class="execution-actions" role="toolbar" aria-label="Execution flow controls">
-                <nav id="execution-breadcrumb" class="execution-breadcrumb" aria-label="Execution location">
-                    <button
-                        id="execution-back"
-                        class="execution-back"
-                        type="button"
-                        aria-label="Back to full execution"
-                        title="Back to full execution"
-                        hidden>←</button>
-                    <span class="execution-breadcrumb-current">Full execution</span>
-                </nav>
+                <button id="execution-previous-issue" class="execution-control" type="button" aria-label="Previous issue" title="Previous error, exception or Flow fault">↑</button>
+                <button id="execution-next-issue" class="execution-control execution-issues" type="button" title="Next error, exception or Flow fault">No issues</button>
+                <span class="execution-control-divider" aria-hidden="true"></span>
                 <button id="execution-zoom-out" class="execution-control" type="button" aria-label="Zoom out execution flow" title="Zoom out">−</button>
+                <span id="execution-zoom-label" class="execution-zoom-label" aria-live="polite">1×</span>
                 <button id="execution-zoom-in" class="execution-control" type="button" aria-label="Zoom in execution flow" title="Zoom in">+</button>
                 <button id="execution-fit" class="execution-control execution-fit" type="button" aria-label="Fit execution flow to view" title="Fit to view">Fit</button>
             </div>
         </div>
         <div id="execution-content" class="execution-content">
-            <div id="execution-scroll" class="execution-scroll" tabindex="0" aria-label="Scrollable execution timeline">
-                <div id="execution-timeline" class="execution-timeline" aria-label="Execution timeline">
-                    <div id="execution-axis" class="execution-axis" aria-hidden="true"></div>
-                    <div id="execution-blocks" class="execution-layer execution-blocks"></div>
-                    <div id="execution-debug-markers" class="execution-layer execution-debug-markers"></div>
-                    <div id="execution-error-markers" class="execution-layer execution-error-markers"></div>
-                    <div id="execution-empty" class="execution-empty">Execution flow appears when a log is opened.</div>
+            <div class="execution-navigation">
+                <button id="execution-back" class="execution-control" type="button" aria-label="Back to parent scope" title="Back to parent scope" disabled>←</button>
+                <nav id="execution-breadcrumb" class="execution-breadcrumb" aria-label="Execution location"></nav>
+                <span class="execution-hint">Select to inspect · Double-click to focus</span>
+            </div>
+            <div id="execution-legend" class="execution-legend" role="group" aria-label="Visible operation types"></div>
+            <div class="execution-chart">
+                <div id="execution-lanes" class="execution-lanes" aria-hidden="true"></div>
+                <div id="execution-scroll" class="execution-scroll" tabindex="0" aria-label="Execution timeline. Arrow keys navigate calls; Enter focuses a call; Escape returns to its parent.">
+                    <div id="execution-timeline" class="execution-timeline" aria-label="Execution timeline">
+                        <div id="execution-axis" class="execution-axis" aria-hidden="true"></div>
+                        <div id="execution-blocks" class="execution-layer execution-blocks"></div>
+                        <div id="execution-debug-markers" class="execution-layer execution-debug-markers"></div>
+                        <div id="execution-error-markers" class="execution-layer execution-error-markers"></div>
+                    </div>
+                </div>
+                <div id="execution-empty" class="execution-empty">Execution flow appears when a log is opened.</div>
+            </div>
+            <div id="execution-inspector" class="execution-inspector" aria-label="Selected execution event">
+                <div class="execution-selection">
+                    <span id="execution-selection-title" class="execution-selection-title">Select an operation or event</span>
+                    <span id="execution-selection-meta" class="execution-selection-meta">Inspect its timing and jump to the original log line.</span>
+                </div>
+                <button id="execution-focus" class="execution-control execution-text-control" type="button" disabled>Focus</button>
+                <button id="execution-go-start" class="execution-control execution-text-control" type="button" disabled>Go to log</button>
+                <button id="execution-go-end" class="execution-control execution-text-control" type="button" disabled>End</button>
+            </div>
+        </div>
+        <div id="execution-resize" class="execution-resize" role="separator" tabindex="0" aria-label="Resize execution flow" aria-orientation="horizontal" aria-valuemin="220" aria-valuemax="700" aria-valuenow="360" title="Drag to resize; use Up/Down arrow keys when focused"></div>
+    </section>
+
+    <div id="reveal-notice" role="status" hidden>
+        <span>Showing a timeline target outside your filters or folded methods.</span>
+        <button id="return-to-filters" type="button">Return to filtered view</button>
+    </div>
+    <div id="log-table-container" role="table" aria-label="Apex log events">
+        <div class="table-header-sticky">
+            <div id="log-table-header-wrapper" role="rowgroup">
+                <div id="log-table-header" role="row">
+                    <div role="columnheader" aria-label="Method folding"></div>
+                    <div role="columnheader">Time<span class="column-resize" data-column="1" role="separator" tabindex="0" aria-label="Resize Time column" aria-orientation="vertical" aria-valuemin="110" aria-valuemax="2400"></span></div>
+                    <div role="columnheader">Event<span class="column-resize" data-column="2" role="separator" tabindex="0" aria-label="Resize Event column" aria-orientation="vertical" aria-valuemin="100" aria-valuemax="2400"></span></div>
+                    <div role="columnheader">Line<span class="column-resize" data-column="3" role="separator" tabindex="0" aria-label="Resize Line column" aria-orientation="vertical" aria-valuemin="70" aria-valuemax="2400"></span></div>
+                    <div role="columnheader">Details<span class="column-resize" data-column="4" role="separator" tabindex="0" aria-label="Resize Details column" aria-orientation="vertical" aria-valuemin="200" aria-valuemax="2400"></span></div>
                 </div>
             </div>
         </div>
-    </section>
-
-    <div id="log-table-container">
-        <div class="table-header-sticky">
-            <div id="log-table-header-wrapper">
-                <table id="log-table-header">
-                    <thead>
-                        <tr>
-                            <th></th>
-                            <th>Time</th>
-                            <th>Event</th>
-                            <th>Line</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                </table>
-            </div>
+        <div id="virtual-viewport" tabindex="0" aria-label="Scrollable log events">
+            <div id="content-container" role="rowgroup"></div>
         </div>
-        <div id="virtual-viewport">
-            <div id="content-container"></div>
-        </div>
+        <div id="log-status" role="status">Loading log…</div>
     </div>
+    <dialog id="variable-dialog" aria-labelledby="variable-dialog-title">
+        <div class="variable-dialog-header">
+            <h2 id="variable-dialog-title">Variable</h2>
+            <button id="variable-dialog-close" class="log-action" type="button" aria-label="Close variable details">Close</button>
+        </div>
+        <p id="variable-dialog-meta"></p>
+        <p id="variable-dialog-notice" hidden></p>
+        <div id="variable-dialog-value"></div>
+        <details class="variable-raw">
+            <summary>Original log event</summary>
+            <pre id="variable-dialog-raw"></pre>
+        </details>
+        <div class="variable-dialog-footer">
+            <button id="variable-copy-raw" class="log-action" type="button">Copy original event</button>
+            <span id="variable-copy-status" role="status"></span>
+        </div>
+    </dialog>
+    <script id="log-parser-script" src="${parserUri}"></script>
     <script src="${scriptUri}"></script>
 </body>
 </html>

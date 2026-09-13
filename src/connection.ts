@@ -11,6 +11,7 @@ let currentOrgUsername: string | undefined;
 let currentConnection: Connection | undefined;
 let connectionAttempt: { orgUsername: string; promise: Promise<Connection> } | undefined;
 let salesforceCore: typeof import('@salesforce/core') | undefined;
+const connectionIdentities = new WeakMap<Connection, { username: string; userId: string; orgId: string }>();
 
 export interface ConnectionOptions {
     forceRefresh?: boolean;
@@ -121,11 +122,16 @@ async function createConnection(orgUsername: string, attempt: number, maxAttempt
         refreshFn: authOptions.refreshFn
     } as ConnectionConfig);
 
-    await withTimeout(
+    const identity = await withTimeout(
         connection.identity(),
         CONNECTION_VALIDATION_TIMEOUT_MS,
         `Timed out while validating the Salesforce connection for "${orgUsername}"`
     );
+    connectionIdentities.set(connection, {
+        username: resolvedUsername,
+        userId: identity.user_id,
+        orgId: identity.organization_id
+    });
 
     outputChannel.appendLine(`Connected to org "${orgUsername}" in ${Date.now() - startedAt}ms`);
     return connection;
@@ -193,7 +199,10 @@ async function readTargetOrg(configPath: string, location: string): Promise<stri
 }
 
 /** Runs a Salesforce API call and retries once with freshly loaded auth on session expiry. */
-export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Promise<T>, provider?: any): Promise<T> {
+export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Promise<T>, provider?: {
+    connection: Connection;
+    updateConnection?: (connection: Connection) => Promise<void>;
+}): Promise<T> {
     const connection = provider?.connection ?? await getConnection();
     try {
         return await fn(connection);
@@ -204,11 +213,20 @@ export async function retryOnSessionExpire<T>(fn: (connection: Connection) => Pr
             // provider or replay IDs/queries against the newly selected org.
             if (provider && provider.connection !== connection) throw error;
             outputChannel.appendLine('Session expired, reloading Salesforce authentication...');
-            const newConnection = await getConnection({ forceRefresh: true });
+            const identity = connectionIdentities.get(connection);
+            if (!identity?.userId || !identity.orgId) throw error;
+            // Reload this connection's auth, even if target-org changed on disk.
+            const newConnection = await createConnectionWithRetry(identity.username, DEFAULT_CONNECT_ATTEMPTS, true);
+            const refreshedIdentity = connectionIdentities.get(newConnection);
+            if (refreshedIdentity?.userId !== identity.userId || refreshedIdentity?.orgId !== identity.orgId) {
+                throw new Error('Salesforce identity changed while refreshing the session. Retry the Salesforce connection.');
+            }
             if (provider && provider.connection !== connection) throw error;
             if (provider && typeof provider.updateConnection === 'function') {
                 await provider.updateConnection(newConnection);
+                if (provider.connection !== newConnection) throw error;
             }
+            if (currentConnection === connection) currentConnection = newConnection;
             return await fn(newConnection);
         }
         throw error;

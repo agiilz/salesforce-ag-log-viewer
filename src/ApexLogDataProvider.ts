@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Connection } from 'jsforce';
 import { ApexLog, ApexLogRecord } from './ApexLogWrapper';
 import { ApexLogFileManager } from './ApexLogFileManager';
-import { ensureTraceFlag } from './TraceFlagManager';
+import { ensureTraceFlag, updateTraceFlagExpirationInterval } from './TraceFlagManager';
 import { outputChannel } from './extension';
 import { retryOnSessionExpire } from './connection';
 import { IApexLogPanelProvider } from './ApexLogPanel/IApexLogPanelProvider';
@@ -32,6 +32,7 @@ export class LogDataProvider implements vscode.Disposable {
     private readonly context: vscode.ExtensionContext;
     private _isVisible: boolean = false;
     private activeProvider?: IApexLogPanelProvider;
+    private readonly configurationListener: vscode.Disposable;
 
     constructor(
         context: vscode.ExtensionContext,
@@ -49,6 +50,17 @@ export class LogDataProvider implements vscode.Disposable {
         this.logs = [];
         this.filteredLogs = [];
         this.autoRefreshPaused = !this.config.autoRefresh;
+        this.configurationListener = vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('salesforceAgLogViewer')) {
+                void this.applyConfiguration().catch(error => {
+                    outputChannel.appendLine(`Failed to apply log settings: ${error}`);
+                    vscode.window.showErrorMessage(`Failed to apply log settings: ${error instanceof Error ? error.message : String(error)}`);
+                });
+            }
+            if (event.affectsConfiguration('salesforceAgLogViewer.traceFlagExpirationInterval')) {
+                updateTraceFlagExpirationInterval();
+            }
+        });
         // Do NOT start auto-refresh here. Only start when panel is visible.
     }
 
@@ -106,6 +118,7 @@ export class LogDataProvider implements vscode.Disposable {
         this.disposed = true;
         this.connectionVersion++;
         this._onDidChangeData.dispose();
+        this.configurationListener.dispose();
         this.stopAutoRefresh();
     }
 
@@ -126,6 +139,7 @@ export class LogDataProvider implements vscode.Disposable {
         isInitialLoad ||= this.initialRefreshRequested;
         this.initialRefreshRequested = false;
         const connectionVersion = this.connectionVersion;
+        const currentUserOnly = this.config.currentUserOnly;
         // An old org's request may still be running. It must not block this
         // generation's first refresh or release its lock when it finishes.
         this.refreshingVersion = connectionVersion;
@@ -143,7 +157,7 @@ export class LogDataProvider implements vscode.Disposable {
                 throw new Error('Current Salesforce user is unavailable. Retry the Salesforce connection.');
             }
             const result = await retryOnSessionExpire(async (conn) => await conn.tooling.query(query), this) as { records: ApexLogRecord[] };
-            if (connectionVersion !== this.connectionVersion) return;
+            if (connectionVersion !== this.connectionVersion || currentUserOnly !== this.config.currentUserOnly) return;
 
             if (!result.records || result.records.length === 0) {
                 //Si no hay registros en la org, se limpia el array de logs para mostrarlo vacio al usuario
@@ -154,7 +168,7 @@ export class LogDataProvider implements vscode.Disposable {
                 this.processLogs(result, isInitialLoad);
             }
         } catch (error: any) {
-            if (connectionVersion !== this.connectionVersion) return;
+            if (connectionVersion !== this.connectionVersion || currentUserOnly !== this.config.currentUserOnly) return;
             outputChannel.appendLine(`Log refresh error: ${error}`);
             vscode.window.showErrorMessage(`Failed to refresh logs: ${error.message}`);
             // Detect common error scenarios and propagate errorInfo
@@ -232,28 +246,19 @@ export class LogDataProvider implements vscode.Disposable {
     private scheduleRefresh() {
         if (this.autoRefreshScheduledId) {
             clearTimeout(this.autoRefreshScheduledId);
+            this.autoRefreshScheduledId = undefined;
         }
 
-        if (this._isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
+        if (!this.disposed && this._isVisible && !this.autoRefreshPaused && !this.isRefreshing) {
             this.autoRefreshScheduledId = setTimeout(() => this.refreshLogs(false, true), this.config.refreshInterval);
         }
     }
 
     //metodo para activar o desactivar el autorefresh de logs
     public async setAutoRefresh(enabled: boolean): Promise<void> {
-        if (this.config.autoRefresh === enabled) {
-            return;
-        }
-        this.config.autoRefresh = enabled;
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-        await config.update('autoRefresh', this.config.autoRefresh, vscode.ConfigurationTarget.Global);
-
-        if (enabled && this._isVisible) {
-            //Si se activa el autorefresh y el panel está visible inicia el autorefresh
-            this.startAutoRefresh();
-        } else {
-            this.stopAutoRefresh();
-        }
+        await config.update('autoRefresh', enabled, vscode.ConfigurationTarget.Global);
+        await this.applyConfiguration();
     }
 
     public getAutoRefreshSetting(): boolean {
@@ -340,31 +345,35 @@ export class LogDataProvider implements vscode.Disposable {
 
     //Metodo para setear el modo de mostrar solo logs del usuario currente
     public async setCurrentUserOnly(showCurrentUserOnly: boolean): Promise<void> {
-        if (this.config.currentUserOnly === showCurrentUserOnly) {
-            //Si el setting ya esta activo, no hace nada
-            return;
-        }
-        this.config.currentUserOnly = showCurrentUserOnly;
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
-        await config.update('currentUserOnly', this.config.currentUserOnly, vscode.ConfigurationTarget.Global);
+        await config.update('currentUserOnly', showCurrentUserOnly, vscode.ConfigurationTarget.Global);
+        await this.applyConfiguration();
+    }
 
+    private async applyConfiguration(): Promise<void> {
+        if (this.disposed) return;
+        const settings = vscode.workspace.getConfiguration('salesforceAgLogViewer');
+        const autoRefresh = settings.get<boolean>('autoRefresh') ?? true;
+        const refreshInterval = Math.max(1000, settings.get<number>('refreshInterval') ?? 5000);
+        const currentUserOnly = settings.get<boolean>('currentUserOnly') ?? true;
+        const refreshChanged = autoRefresh !== this.config.autoRefresh || refreshInterval !== this.config.refreshInterval;
+        const visibilityChanged = currentUserOnly !== this.config.currentUserOnly;
+        Object.assign(this.config, { autoRefresh, refreshInterval, currentUserOnly });
+        if (refreshChanged) {
+            if (autoRefresh && this._isVisible) this.startAutoRefresh();
+            else this.stopAutoRefresh();
+        }
+        if (!visibilityChanged) return;
         const connection = this.connection;
         const connectionVersion = this.connectionVersion;
-        const identity = await connection.identity();
-        if (connectionVersion !== this.connectionVersion) return;
-        this.currentUserId = identity.user_id;
-        // A trace-flag permission error must not change the user's visibility setting.
-        try {
-            if (this.currentUserId) {
-                await ensureTraceFlag(connection, this.currentUserId);
-            }
-        } catch (error: any) {
-            outputChannel.appendLine(`Trace flag setup failed; keeping log visibility unchanged: ${error.message}`);
+        if (currentUserOnly && !this.currentUserId) {
+            const identity = await connection.identity();
+            if (connectionVersion !== this.connectionVersion) return;
+            this.currentUserId = identity.user_id;
         }
         if (connectionVersion !== this.connectionVersion) return;
-        //Refresca los logs con el nuevo setting
+        // Trace flags are already managed independently of the visibility filter.
         await this.refreshLogs(true, false);
-        this._notifyDataChange(false);
     }
 
     //Metodo para saber si el setting de mostrar solo logs del usuario actual esta activo

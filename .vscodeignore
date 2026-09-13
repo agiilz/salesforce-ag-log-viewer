@@ -16,6 +16,7 @@ src/**/*.spec.*
 !src/ApexLogDetails/ApexLogDetails.html
 !src/ApexLogDetails/ApexLogDetails.css
 !src/ApexLogDetails/ApexLogDetails.js
+!src/ApexLogDetails/ApexLogParser.js
 
 # Exclude VS Code and git config
 .vscode

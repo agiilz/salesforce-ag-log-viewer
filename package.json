@@ -2,7 +2,7 @@
   "name": "salesforce-ag-log-viewer",
   "displayName": "Salesforce Logs",
   "description": "View and manage Salesforce developer logs with auto-refresh and filtering capabilities",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "publisher": "aGxLabs",
   "author": {
     "name": "Adrià Gil"
@@ -56,7 +56,8 @@
           "type": "number",
           "default": 15,
           "minimum": 5,
-          "description": "Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Default: 15."
+          "maximum": 1439,
+          "description": "Expiration interval (in minutes) for Salesforce trace flags. Minimum: 5, Maximum: 1439, Default: 15."
         },
         "salesforceAgLogViewer.showOutputOnStart": {
           "type": "boolean",
@@ -140,6 +141,17 @@
         "category": "Salesforce AG Log Viewer"
       },
       {
+        "command": "salesforce-ag-log-viewer.selectDebugLevel",
+        "title": "Select Debug Level",
+        "icon": "$(settings)",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
+        "command": "salesforce-ag-log-viewer.createDebugLevel",
+        "title": "Create Debug Level",
+        "category": "Salesforce AG Log Viewer"
+      },
+      {
         "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
         "title": "Delete All Trace Flags (Except Current User)",
         "icon": "$(circle-slash)",
@@ -180,24 +192,29 @@
           "group": "navigation@4"
         },
         {
-          "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
+          "command": "salesforce-ag-log-viewer.selectDebugLevel",
           "when": "view == salesforceLogsView",
           "group": "navigation@5"
         },
         {
-          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
+          "command": "salesforce-ag-log-viewer.deleteAllTraceFlagsExceptCurrent",
           "when": "view == salesforceLogsView",
           "group": "navigation@6"
         },
         {
-          "command": "salesforce-ag-log-viewer.deleteAllLogs",
+          "command": "salesforce-ag-log-viewer.clearDownloadedLogs",
           "when": "view == salesforceLogsView",
           "group": "navigation@7"
         },
         {
-          "command": "salesforce-ag-log-viewer.showOptions",
+          "command": "salesforce-ag-log-viewer.deleteAllLogs",
           "when": "view == salesforceLogsView",
           "group": "navigation@8"
+        },
+        {
+          "command": "salesforce-ag-log-viewer.showOptions",
+          "when": "view == salesforceLogsView",
+          "group": "navigation@9"
         }
       ],
       "editor/title": [
@@ -218,8 +235,8 @@
     "dev": "node esbuild.js --dev",
     "pretest": "npm run dev && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "test:org-switch": "node --test src/test/orgSwitch.test.js"
+    "test": "node ./out/test/runTest.js"
+
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
