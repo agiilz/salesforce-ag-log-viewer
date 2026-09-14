@@ -18,9 +18,11 @@ let reconnectPromise: Promise<void> | undefined;
 let reconnectRequested = false;
 let extensionComponentsRegistered = false;
 let focusScheduled = false;
+let extensionActive = false;
 export const outputChannel = vscode.window.createOutputChannel('Salesforce AG Log Viewer');
 
 export async function activate(context: vscode.ExtensionContext) {
+    extensionActive = true;
     extensionContext = context;
     initializeDebugLevels(context.workspaceState);
     const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
@@ -38,22 +40,39 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('salesforce-ag-log-viewer.retryConnection', retryConnection)
     );
 
+    // The view must be registered before authentication. Otherwise a missing or
+    // expired org leaves VS Code with a contributed view but no data provider.
+    activeProvider = new ApexLogPanelProvider(context.extensionUri);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider('salesforceLogsView', activeProvider)
+    );
+    registerCommands(context, activeProvider);
+
+    if (!focusScheduled) {
+        focusScheduled = true;
+        setTimeout(() => {
+            void vscode.commands.executeCommand('salesforceLogsView.focus');
+        }, 500);
+    }
+
     // Watch org configuration before connecting so creating/changing the target
     // org after a failed activation can recover the extension automatically.
     setupConfigFileWatchers(context);
 
-    try {
-        await initializeExtensionComponents();
-    } catch (error) {
+    void initializeExtensionComponents().catch(error => {
         reportConnectionFailure('Activation', error);
-    }
+    });
 }
 
 async function initializeExtensionComponents(forceReconnect: boolean = false): Promise<void> {
+    if (!extensionActive) return;
+
     if (extensionComponentsRegistered) {
-        if (forceReconnect && logDataProvider) {
+        const currentProvider = logDataProvider;
+        if (forceReconnect && currentProvider) {
             const connection = await getConnection({ forceRefresh: true });
-            await logDataProvider.updateConnection(connection);
+            if (!extensionActive || logDataProvider !== currentProvider) return;
+            await currentProvider.updateConnection(connection);
         }
         return;
     }
@@ -67,6 +86,8 @@ async function initializeExtensionComponents(forceReconnect: boolean = false): P
     initializationPromise = (async () => {
         const config = vscode.workspace.getConfiguration('salesforceAgLogViewer');
         const connection = await getConnection({ forceRefresh: forceReconnect });
+        if (!extensionActive) return;
+
         const dataProvider = await LogDataProvider.create(
             extensionContext,
             connection,
@@ -76,29 +97,27 @@ async function initializeExtensionComponents(forceReconnect: boolean = false): P
                 currentUserOnly: config.get('currentUserOnly') ?? true
             }
         );
-        const panelProvider = new ApexLogPanelProvider(extensionContext.extensionUri, dataProvider);
+        if (!extensionActive) {
+            dataProvider.dispose();
+            stopTraceFlagKeepAlive();
+            return;
+        }
+
+        const panelProvider = activeProvider;
+        if (!panelProvider) throw new Error('Salesforce Logs view provider is not registered.');
 
         dataProvider.setActiveProvider(panelProvider);
         logDataProvider = dataProvider;
-        activeProvider = panelProvider;
+        panelProvider.setLogDataProvider(dataProvider);
 
         extensionContext.subscriptions.push(
-            vscode.window.registerWebviewViewProvider('salesforceLogsView', panelProvider),
             dataProvider.onDidChangeData(({ data, isAutoRefresh }) => {
                 panelProvider.updateView(data, isAutoRefresh);
             })
         );
 
-        registerCommands(extensionContext, panelProvider);
         extensionComponentsRegistered = true;
         outputChannel.appendLine('Extension activation complete');
-
-        if (!focusScheduled) {
-            focusScheduled = true;
-            setTimeout(() => {
-                void vscode.commands.executeCommand('salesforceLogsView.focus');
-            }, 500);
-        }
     })();
 
     try {
@@ -108,7 +127,7 @@ async function initializeExtensionComponents(forceReconnect: boolean = false): P
         // clear it and allow the Retry Connection command to start cleanly.
         logDataProvider?.dispose();
         logDataProvider = undefined;
-        activeProvider = undefined;
+        activeProvider?.setLogDataProvider(undefined);
         throw error;
     } finally {
         initializationPromise = undefined;
@@ -156,6 +175,7 @@ function reportConnectionFailure(context: string, error: unknown): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
     outputChannel.appendLine(`${context} error: ${errorMessage}`);
     console.error(`${context} error:`, error);
+    activeProvider?.showConnectionError(error);
 
     void vscode.window.showErrorMessage(
         `Salesforce Log Viewer could not connect: ${errorMessage}`,
@@ -242,11 +262,15 @@ function registerCommands(context: vscode.ExtensionContext, provider: ApexLogPan
 
 //Metodo que se llama cuando la extension se desactiva (standard)
 export function deactivate() {
+    extensionActive = false;
     stopTraceFlagKeepAlive();
     if (logDataProvider) {
         logDataProvider.dispose();
         logDataProvider = undefined;
     }
+    activeProvider?.setLogDataProvider(undefined);
+    activeProvider = undefined;
+    extensionComponentsRegistered = false;
 }
 
 //Obtener el provider de la extension con la configuracion y conexion actual

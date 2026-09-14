@@ -8,24 +8,52 @@ import { IApexLogPanelProvider } from './IApexLogPanelProvider';
 
 export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLogPanelProvider {
     private _view?: vscode.WebviewView;
-    private readonly _logDataProvider: LogDataProvider;
+    private _logDataProvider?: LogDataProvider;
+    private _connectionError?: string;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
-        logDataProvider: LogDataProvider
+        logDataProvider?: LogDataProvider
     ) {
         this._logDataProvider = logDataProvider;
-    } public async refresh(): Promise<void> {
-        if (this._logDataProvider) {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Refreshing Salesforce logs...',
-                cancellable: false
-            }, async () => {
-                await this._logDataProvider.refreshLogs(false, true);
-            });
+    }
+
+    public setLogDataProvider(logDataProvider: LogDataProvider | undefined): void {
+        this._logDataProvider = logDataProvider;
+        if (!logDataProvider) return;
+
+        this._connectionError = undefined;
+        if (this._view) {
+            logDataProvider.setPanelVisibility(this._view.visible);
+            this.updateView(logDataProvider.getGridData());
+            if (this._view.visible) {
+                void logDataProvider.refreshLogs(true, false);
+            }
         }
-    } public postMessage(message: any) {
+    }
+
+    public showConnectionError(error: unknown): void {
+        this._connectionError = error instanceof Error ? error.message : String(error);
+        this.updateView([], false, { hasError: true, message: this._connectionError });
+    }
+
+    public async refresh(): Promise<void> {
+        const logDataProvider = this._logDataProvider;
+        if (!logDataProvider) {
+            await vscode.commands.executeCommand('salesforce-ag-log-viewer.retryConnection');
+            return;
+        }
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: 'Refreshing Salesforce logs...',
+            cancellable: false
+        }, async () => {
+            await logDataProvider.refreshLogs(false, true);
+        });
+    }
+
+    public postMessage(message: any) {
         if (this._view) {
             this._view.webview.postMessage(message);
         }
@@ -55,15 +83,15 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
     ) {
         this._view = webviewView;
 
-        this._logDataProvider.setPanelVisibility(webviewView.visible);
+        this._logDataProvider?.setPanelVisibility(webviewView.visible);
         // Always load logs when panel becomes visible, regardless of auto-refresh setting
-        if (webviewView.visible) {
+        if (webviewView.visible && this._logDataProvider) {
             // Don't await here to avoid blocking webview setup
-            this._logDataProvider.refreshLogs(true, false);
+            void this._logDataProvider.refreshLogs(true, false);
         }
 
         webviewView.onDidChangeVisibility(async () => {
-            this._logDataProvider.setPanelVisibility(webviewView.visible);
+            this._logDataProvider?.setPanelVisibility(webviewView.visible);
             if (webviewView.visible) {
                 await this.refresh();
             }
@@ -86,14 +114,23 @@ export class ApexLogPanelProvider implements vscode.WebviewViewProvider, IApexLo
         webviewView.webview.html = this.getHtmlForWebview(scriptUri, styleUri);
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'ready') {
+                const logDataProvider = this._logDataProvider;
+                if (!logDataProvider) {
+                    this.updateView([], false, {
+                        hasError: true,
+                        message: this._connectionError ?? 'Connecting to Salesforce...'
+                    });
+                    return;
+                }
+
                 let initialData: any[] = [];
                 let errorInfo: { hasError: boolean, message?: string } | null = null;
                 try {
-                    initialData = this._logDataProvider?.getGridData();
+                    initialData = logDataProvider.getGridData();
                     // If no data available, force a refresh
                     if (!initialData || initialData.length === 0) {
-                        await this._logDataProvider.refreshLogs(true, false);
-                        initialData = this._logDataProvider?.getGridData();
+                        await logDataProvider.refreshLogs(true, false);
+                        initialData = logDataProvider.getGridData();
                     }
                 } catch (err: any) {
                     // Detect common error causes
